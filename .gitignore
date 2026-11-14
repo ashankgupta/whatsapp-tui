@@ -1,2 +1,12 @@
 contacts.json
 session.db
+session.db-wal
+session.db-shm
+history.db
+history.db-wal
+history.db-shm
+whatsapp-tui
+media/
+whatsapp.log
+downloads/
+dist/
