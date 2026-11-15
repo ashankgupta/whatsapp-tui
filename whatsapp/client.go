@@ -285,7 +285,7 @@ func waLogger(module string) waLog.Logger {
 
 // Connect initializes and connects to WhatsApp, returning a client instance.
 func Connect(dbPath string) *whatsmeow.Client {
-	container, err := sqlstore.New(context.Background(), "sqlite3", dbPath, waLogger("DB"))
+	container, err := sqlstore.New(context.Background(), "sqlite", dbPath, waLogger("DB"))
 	if err != nil {
 		log.Fatalf("❌ Database error: %v", err)
 	}
