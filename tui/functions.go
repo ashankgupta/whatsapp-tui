@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -472,7 +473,7 @@ func openWhatsAppCmd(number string) bubbletea.Cmd {
 		var lastErr error
 		for _, target := range targets {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			err := exec.CommandContext(ctx, "xdg-open", target).Run()
+			err := openURLCommand(ctx, target).Run()
 			cancel()
 			if err == nil {
 				return openWhatsAppResult{target: target}
@@ -480,6 +481,19 @@ func openWhatsAppCmd(number string) bubbletea.Cmd {
 			lastErr = err
 		}
 		return openWhatsAppResult{err: lastErr}
+	}
+}
+
+// openURLCommand returns the platform's command for opening a URL with its
+// default handler.
+func openURLCommand(ctx context.Context, target string) *exec.Cmd {
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.CommandContext(ctx, "open", target)
+	case "windows":
+		return exec.CommandContext(ctx, "rundll32", "url.dll,FileProtocolHandler", target)
+	default:
+		return exec.CommandContext(ctx, "xdg-open", target)
 	}
 }
 
