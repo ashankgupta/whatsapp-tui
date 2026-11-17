@@ -5,7 +5,7 @@ import (
 	"os"
 
 	bubbletea "github.com/charmbracelet/bubbletea"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 
 	"whatsapp-tui/contacts"
 	"whatsapp-tui/history"
@@ -13,7 +13,19 @@ import (
 	"whatsapp-tui/whatsapp"
 )
 
+// Set at build time via -ldflags by GoReleaser.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
+		fmt.Printf("whatsapp-tui %s (commit %s, built %s)\n", version, commit, date)
+		return
+	}
+
 	// Load contacts
 	contactsList := contacts.LoadContacts("contacts.json")
 
@@ -26,7 +38,7 @@ func main() {
 	defer store.Close()
 
 	// Connect to WhatsApp (session is persisted in session.db)
-	client := whatsapp.Connect("file:session.db?_foreign_keys=on")
+	client := whatsapp.Connect("file:session.db?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 
 	// Listen for incoming messages and calls
 	incoming := whatsapp.Listen(client)
