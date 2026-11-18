@@ -1,0 +1,109 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: whatsapp-tui
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: whatsapp-tui
+    main: .
+    binary: whatsapp-tui
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+      - freebsd
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: freebsd
+        goarch: arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .ShortCommit }} -X main.date={{ .Date }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_
+      {{- if eq .Os "darwin" }}macOS
+      {{- else }}{{ title .Os }}{{ end }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - README.md
+      - LICENSE
+
+nfpms:
+  - id: packages
+    package_name: whatsapp-tui
+    file_name_template: "{{ .ConventionalFileName }}"
+    vendor: Ashank Gupta
+    homepage: https://github.com/ashankgupta/whatsapp-tui
+    maintainer: Ashank Gupta
+    description: A terminal WhatsApp client with chat history, media previews and reactions.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+      - archlinux
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Build & CI
+      regexp: '^.*?(build|ci)(\(.+\))??!?:.+$'
+      order: 2
+    - title: Other changes
+      order: 999
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^style:'
+      - '^chore:'
+
+release:
+  github:
+    owner: ashankgupta
+    name: whatsapp-tui
+  name_template: "v{{ .Version }}"
+  footer: |
+    ## Installation
+
+    Download the archive for your platform below, extract it, and run `whatsapp-tui`
+    from a folder containing your `contacts.json`. Linux users can also install the
+    `.deb`, `.rpm`, `.apk` or Arch package.
+
+    Verify downloads against `checksums.txt`:
+
+    ```bash
+    sha256sum --ignore-missing -c checksums.txt
+    ```
