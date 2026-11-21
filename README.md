@@ -1,74 +1,97 @@
-# 📱 WhatsApp TUI Messenger (Go + Bubble Tea)
+# WhatsApp TUI Messenger (Go + Bubble Tea)
 
 [![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://golang.org/)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen?logo=github-actions)](https://github.com/yourusername/whatsapp-tui-go/actions)
+[![CI](https://github.com/ashankgupta/whatsapp-tui/actions/workflows/ci.yml/badge.svg)](https://github.com/ashankgupta/whatsapp-tui/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ashankgupta/whatsapp-tui?logo=github)](https://github.com/ashankgupta/whatsapp-tui/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 
 A terminal-based WhatsApp messenger built in Go using [whatsmeow](https://github.com/tulir/whatsmeow) and the [Bubble Tea](https://github.com/charmbracelet/bubbletea) TUI framework. Send messages and files directly from your terminal to WhatsApp contacts with ease.
 
 ---
 
-## ✨ Features
+## Features
 
-- 🔍 Search and filter contacts from a local JSON file
-- 💬 WhatsApp-style chat view with sent/received messages
-- 🖼️ Inline image previews rendered with truecolor terminal blocks
-- 💾 Save incoming images, documents and other media with `Ctrl+S`
-- 📎 Send local files with `Ctrl+F` — images are sent as photos, everything else as documents
-- 😊 Message reactions — see reactions under bubbles and react to any message with `Ctrl+R`
-- 📞 Incoming WhatsApp call alerts with reject (`Ctrl+D`)
-- 🔗 Open a direct chat in WhatsApp desktop/web with `Ctrl+O`
-- 🗂️ Persistent chat history stored locally in `history.db`
-- 💾 Full session persistence in `session.db` (no re-scan after first login)
-- 📄 Maintain local contact list in `contacts.json`
-- 🎨 Modern WhatsApp-inspired dark UI with avatars, chat bubbles and unread badges
-- 🖥️ Smooth terminal UI with keyboard navigation
-- 📥 Live incoming messages and unread counts (`Tab` to open chats)
-- 🔐 QR-based login (session saved locally)
-- 🧠 Written entirely in Go (no browser or Node.js required)
-
----
-
-## 📸 Screenshots
-
-### 🧭 Home Page
-![Home Page](assets/1.png)
-
-### 💬 Message Page
-![Message Page](assets/2.png)
-
-### 📤 Final Page
-![Final Page](assets/3.png)
+- Search and filter contacts from a local JSON file
+- WhatsApp-style chat view with sent/received messages
+- Inline image previews rendered with truecolor terminal blocks
+- Save incoming images, documents and other media with `Ctrl+S`
+- Send local files with `Ctrl+F` — images are sent as photos, everything else as documents
+- Message reactions — see reactions under bubbles and react to any message with `Ctrl+R`
+- Incoming WhatsApp call alerts with reject (`Ctrl+D`)
+- Open a direct chat in WhatsApp desktop/web with `Ctrl+O`
+- Persistent chat history stored locally in `history.db`
+- Full session persistence in `session.db` (no re-scan after first login)
+- Maintain local contact list in `contacts.json`
+- Modern WhatsApp-inspired dark UI with avatars, chat bubbles and unread badges
+- Smooth terminal UI with keyboard navigation
+- Live incoming messages and unread counts (`Tab` to open chats)
+- QR-based login (session saved locally)
+- Written entirely in Go (no browser or Node.js required)
 
 ---
 
+## Screenshots
 
-#### Only Works on Linux System Currently 
+### Contacts and incoming calls
+![Contacts list with unread badges and an incoming call alert](assets/contacts.png)
 
-Inline previews use truecolor ANSI blocks and look best in a modern terminal (Ghostty, Kitty, WezTerm, Alacritty, etc.).
+### Chat
+![Chat view with sent and received bubbles, reactions and a document](assets/chat.png)
+
+### Inline images and reactions
+![Inline truecolor image preview with reaction picker](assets/media.png)
+
+*Screenshots use demo data.*
+
+---
 
 
-## 📦 Installation
-### 1. Clone the repository
+Runs on Linux, macOS, Windows and FreeBSD (x86_64 and arm64). Inline previews use truecolor ANSI blocks and look best in a modern terminal (Ghostty, Kitty, WezTerm, Alacritty, etc.).
+
+
+## Installation
+
+### Download a release (recommended)
+
+Grab the archive for your platform from the [latest release](https://github.com/ashankgupta/whatsapp-tui/releases/latest):
+
+| OS | File |
+| --- | --- |
+| Linux | `whatsapp-tui_<version>_Linux_x86_64.tar.gz` / `_arm64.tar.gz` |
+| macOS | `whatsapp-tui_<version>_macOS_x86_64.tar.gz` (Intel) / `_arm64.tar.gz` (Apple Silicon) |
+| Windows | `whatsapp-tui_<version>_Windows_x86_64.zip` / `_arm64.zip` |
+| FreeBSD | `whatsapp-tui_<version>_Freebsd_x86_64.tar.gz` |
+
+Linux packages are also available (`.deb`, `.rpm`, `.apk`, Arch `.pkg.tar.zst`):
+
 ```bash
-git clone https://github.com/ashankgupta/whatsapp-tui-go.git
-cd whatsapp-tui-go
+sudo dpkg -i whatsapp-tui_<version>_amd64.deb   # Debian/Ubuntu
+sudo rpm -i whatsapp-tui-<version>.x86_64.rpm   # Fedora/RHEL
 ```
-### 2. Install Go modules
+
+On macOS, unsigned binaries are quarantined by Gatekeeper. Clear the flag once after extracting:
+
 ```bash
-go mod tidy
-```
-### 3. Build the binary
-```bash
-go build -o whatsapp-tui
+xattr -d com.apple.quarantine ./whatsapp-tui
 ```
 
-`go-sqlite3` needs CGO and a C compiler (for example `gcc`).
+Check your download against `checksums.txt` from the release:
 
-### 4. Run the app
 ```bash
+sha256sum --ignore-missing -c checksums.txt
+```
+
+### Build from source
+
+```bash
+git clone https://github.com/ashankgupta/whatsapp-tui.git
+cd whatsapp-tui
+go build -o whatsapp-tui .
 ./whatsapp-tui
 ```
+
+No C compiler is needed — SQLite is a pure-Go driver, so `CGO_ENABLED=0` builds work on every platform. Run `whatsapp-tui --version` to see the installed version.
 
 ### contacts.json Format
 Create a contacts.json file in the root directory with this format:
@@ -77,11 +100,11 @@ Create a contacts.json file in the root directory with this format:
 [
   {
     "name": "Alice",
-    "phone": "1234567890"
+    "number": "1234567890"
   },
   {
     "name": "Bob",
-    "phone": "9876543210"
+    "number": "9876543210"
   }
 ]
 
@@ -92,7 +115,7 @@ Create a contacts.json file in the root directory with this format:
 
 #### 2. No dashes, spaces, or special characters.
 
-## 🔑 QR Code Login
+## QR Code Login
 
 #### 1. On first run, a QR code appears in your terminal.
 
@@ -102,7 +125,7 @@ Create a contacts.json file in the root directory with this format:
 
 #### 4. Your session is saved to `session.db` for reuse.
 
-## 💬 Chat History & Receiving
+## Chat History & Receiving
 
 Messages are saved locally in `history.db`, so conversations survive restarts. Open a contact with `Enter` to see its full history and reply in the same view. Incoming messages arrive live; press `Tab` for a list of recent chats. Reactions are shown under the relevant bubble and persist in `history.db`.
 
@@ -123,17 +146,17 @@ Incoming WhatsApp calls appear as a banner. You can reject them with `Ctrl+D` or
 | Recent chats | `↑/↓` navigate, `Enter` open, `Tab` back, `Ctrl+O` open in WhatsApp, `q` quit |
 | Call alert | `Ctrl+D` reject, `Esc` hide |
 
-## ⚠️ Disclaimer
+## Disclaimer
 
 #### This project uses an unofficial WhatsApp Web API, which may stop working if WhatsApp changes its internal protocol. Use responsibly. This is meant for educational or personal use only.
 
-## 🙌 Contributing
+## Contributing
 
 Pull requests are welcome! If you have ideas for improvement, feel free to open an issue or PR.
 
 
-## 📄 License
+## License
 
 MIT License
-© 2025 Ashank Gupta
+© 2026 Ashank Gupta
 
