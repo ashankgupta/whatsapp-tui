@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"whatsapp-tui/history"
 	"whatsapp-tui/whatsapp"
@@ -149,7 +150,7 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 			case bubbletea.KeySpace:
 				m.attachInput += " "
 			case bubbletea.KeyRunes:
-				m.attachInput += string(msg.Runes)
+				m.attachInput += typedText(msg.Runes)
 			case bubbletea.KeyCtrlU:
 				m.attachInput = ""
 			}
@@ -325,11 +326,11 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 
 		case bubbletea.KeyRunes:
 			if m.step == 0 {
-				m.searchQuery += string(msg.Runes)
+				m.searchQuery += typedText(msg.Runes)
 				m.filterContacts()
 				m.adjustSelection()
 			} else if m.step == 1 {
-				m.appendInput(string(msg.Runes))
+				m.appendInput(typedText(msg.Runes))
 			}
 		}
 
@@ -658,6 +659,19 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 }
 
 // appendInput adds text to the current input line.
+// typedText drops control characters from typed runes. Windows consoles can
+// report modifier keys such as Shift as NUL runes, which would otherwise end up
+// invisibly inside file paths and messages.
+func typedText(runes []rune) string {
+	var b strings.Builder
+	for _, r := range runes {
+		if !unicode.IsControl(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 func (m *Model) appendInput(text string) {
 	if len(m.messageLines) == 0 {
 		m.messageLines = []string{""}

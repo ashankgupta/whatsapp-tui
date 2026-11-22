@@ -79,7 +79,13 @@ func fileExists(path string) bool {
 
 // resolveLocalPath expands ~ and file:// paths and verifies the target.
 func resolveLocalPath(input string) (string, error) {
-	path := strings.TrimSpace(input)
+	path := strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, input)
+	path = strings.TrimSpace(path)
 	path = strings.Trim(path, `"'`)
 	if path == "" {
 		return "", fmt.Errorf("enter a file path")
