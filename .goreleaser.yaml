@@ -70,7 +70,8 @@ snapshot:
 
 changelog:
   sort: asc
-  use: github
+  use: git
+  abbrev: 7
   groups:
     - title: Features
       regexp: '^.*?feat(\(.+\))??!?:.+$'
@@ -95,12 +96,20 @@ release:
     owner: ashankgupta
     name: whatsapp-tui
   name_template: "v{{ .Version }}"
+  header: |
+    {{ .TagBody }}
   footer: |
     ## Installation
 
     Download the archive for your platform below, extract it, and run `whatsapp-tui`
     from a folder containing your `contacts.json`. Linux users can also install the
     `.deb`, `.rpm`, `.apk` or Arch package.
+
+    On macOS, clear the Gatekeeper quarantine flag once after extracting:
+
+    ```bash
+    xattr -d com.apple.quarantine ./whatsapp-tui
+    ```
 
     Verify downloads against `checksums.txt`:
 
