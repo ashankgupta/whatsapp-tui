@@ -10,7 +10,7 @@ import (
 
 // NewModel creates a new TUI model with the given contacts, WhatsApp client and
 // persistent history store.
-func NewModel(contacts []contacts.Contact, client *whatsmeow.Client, incoming <-chan whatsapp.IncomingMessage, incomingCalls <-chan whatsapp.CallEvent, store *history.Store) *Model {
+func NewModel(contacts []contacts.Contact, client *whatsmeow.Client, incoming <-chan whatsapp.IncomingMessage, incomingCalls <-chan whatsapp.CallEvent, archiveEvents <-chan whatsapp.ArchiveEvent, store *history.Store) *Model {
 	m := &Model{
 		contacts:         contacts,
 		filteredContacts: contacts,
@@ -29,18 +29,18 @@ func NewModel(contacts []contacts.Contact, client *whatsmeow.Client, incoming <-
 		currentLine:      0,
 		incoming:         incoming,
 		incomingCalls:    incomingCalls,
+		archiveEvents:    archiveEvents,
+		archived:         make(map[string]bool),
 		unread:           make(map[string]int),
 		imagePreviews:    make(map[string]string),
 		imagePreviewErrs: make(map[string]string),
+		sixels:           make(map[int]*sixelImage),
+		sixelNextID:      new(int),
 		mediaPending:     make(map[string]bool),
 		mediaErrors:      make(map[string]string),
 	}
 
-	if store != nil {
-		if conversations, err := store.Conversations(); err == nil {
-			m.conversations = conversations
-		}
-	}
+	m.refreshConversations()
 
 	return m
 }

@@ -13,8 +13,25 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+// stripSkinTones removes emoji skin tone modifiers (U+1F3FB–U+1F3FF).
+// Width libraries count "👉🏻" as 2 columns, but tmux and many terminals draw
+// the modifier as a separate wide glyph (4 columns), which overflows rows and
+// breaks the layout. The plain emoji keeps the meaning with a stable width.
+func stripSkinTones(s string) string {
+	if !strings.ContainsAny(s, "\U0001F3FB\U0001F3FC\U0001F3FD\U0001F3FE\U0001F3FF") {
+		return s
+	}
+	return strings.Map(func(r rune) rune {
+		if r >= 0x1F3FB && r <= 0x1F3FF {
+			return -1
+		}
+		return r
+	}, s)
+}
+
 // truncate shortens plain text to at most max display columns.
 func truncate(s string, max int) string {
+	s = stripSkinTones(s)
 	if max <= 0 {
 		return ""
 	}
@@ -233,11 +250,11 @@ func (m Model) renderContactList() string {
 }
 
 func (m Model) renderChatsList() string {
-	start, end := m.listRange(m.convScroll, len(m.conversations))
+	start, end := m.listRange(m.convScroll, len(m.chatList))
 
 	var lines []string
 	for i := start; i < end; i++ {
-		c := m.conversations[i]
+		c := m.chatList[i]
 		preview := conversationLabel(c)
 		if c.FromMe {
 			preview = "You: " + preview
@@ -245,7 +262,11 @@ func (m Model) renderChatsList() string {
 		lines = append(lines, m.renderListRow(m.chatName(c.ChatJID), listTime(c.Timestamp), preview, m.unread[c.ChatJID], i == m.convSelected))
 	}
 	if len(lines) == 0 {
-		lines = append(lines, mutedStyle.Render("   No conversations yet"))
+		empty := "   No conversations yet"
+		if m.showArchived {
+			empty = "   No archived chats"
+		}
+		lines = append(lines, mutedStyle.Render(empty))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -339,30 +360,22 @@ func (m Model) renderChatMessages() string {
 	used := 0
 
 	if atBottom {
-		for i := len(m.chatMessages) - 1; i >= start; i-- {
+		// Fill from the newest message upwards; the oldest block may be
+		// taller than the space left and is clipped at the top below.
+		for i := len(m.chatMessages) - 1; i >= start && used < budget; i-- {
 			b := m.messageBlock(i, m.savingMedia && i == m.saveTarget)
-			h := strings.Count(b, "\n") + 1
-			if used+h > budget && len(blocks) > 0 {
-				break
-			}
 			blocks = append(blocks, b)
-			used += h
+			used += strings.Count(b, "\n") + 1
 		}
 		for i, j := 0, len(blocks)-1; i < j; i, j = i+1, j-1 {
 			blocks[i], blocks[j] = blocks[j], blocks[i]
 		}
 	} else {
-		for i := start; i < len(m.chatMessages); i++ {
+		// Fill downwards; the last block may be clipped at the bottom below.
+		for i := start; i < len(m.chatMessages) && used < budget; i++ {
 			b := m.messageBlock(i, m.savingMedia && i == m.saveTarget)
-			h := strings.Count(b, "\n") + 1
-			if used+h > budget && len(blocks) > 0 {
-				break
-			}
 			blocks = append(blocks, b)
-			used += h
-			if used >= budget {
-				break
-			}
+			used += strings.Count(b, "\n") + 1
 		}
 	}
 
@@ -520,6 +533,9 @@ func (m Model) renderMediaBubble(msg history.Message, selected bool) string {
 			maxRows = 3
 		}
 		maxCols := m.terminalWidth - 4
+		if maxTotal, _ := m.bubbleWidths(); maxCols > maxTotal {
+			maxCols = maxTotal // keep the image as wide as its caption bubble at most
+		}
 		if maxCols > maxImageCols {
 			maxCols = maxImageCols
 		}
@@ -571,7 +587,8 @@ func mediaBubbleReserve(content string, width int) int {
 func (m Model) renderBubble(msg history.Message, content string, forcedWidth int, selected bool) string {
 	_, maxStyleWidth := m.bubbleWidths()
 
-	reactionText := reactionSummary(msg.Reactions)
+	content = stripSkinTones(content)
+	reactionText := stripSkinTones(reactionSummary(msg.Reactions))
 	contentWidth := lipgloss.Width(content)
 	if w := lipgloss.Width(reactionText); w > contentWidth {
 		contentWidth = w

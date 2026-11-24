@@ -28,11 +28,17 @@ type Model struct {
 	cursorPos        int
 	incoming         <-chan whatsapp.IncomingMessage
 	incomingCalls    <-chan whatsapp.CallEvent
+	archiveEvents    <-chan whatsapp.ArchiveEvent
+	archived         map[string]bool // cached archive state per chat
+	showArchived     bool
+	archivedCount    int
+	isArchiving      bool
 	activeCall       *whatsapp.CallEvent
 	activeChat       string
 	chatMessages     []history.Message
 	chatScroll       int
 	conversations    []history.Conversation
+	chatList         []history.Conversation // conversations shown in the recent chats view
 	convSelected     int
 	convScroll       int
 	unread           map[string]int
@@ -49,6 +55,8 @@ type Model struct {
 	saveScroll       int
 	imagePreviews    map[string]string
 	imagePreviewErrs map[string]string
+	sixels           map[int]*sixelImage
+	sixelNextID      *int
 	mediaPending     map[string]bool
 	mediaErrors      map[string]string
 }

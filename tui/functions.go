@@ -106,27 +106,18 @@ func (m *Model) filterContacts() {
 }
 
 // maxChatScroll is the index of the first message visible when the chat is
-// scrolled to the bottom. It accounts for variable-height media bubbles.
+// scrolled to the bottom. That message may be only partly visible, clipped at
+// the top edge like in mobile chat apps, so the view is always filled.
 func (m *Model) maxChatScroll() int {
-	if len(m.chatMessages) == 0 {
-		return 0
-	}
-
 	budget := m.chatLineBudget()
 	used := 0
-	start := len(m.chatMessages) - 1
 	for i := len(m.chatMessages) - 1; i >= 0; i-- {
-		h := m.messageHeight(i)
-		if used > 0 && used+h > budget {
-			return i + 1
-		}
-		used += h
-		start = i
+		used += m.messageHeight(i)
 		if used >= budget {
-			return start
+			return i
 		}
 	}
-	return start
+	return 0
 }
 
 // keepChatBottom restores the bottom scroll position after the chat height changes.
@@ -205,8 +196,20 @@ func (m *Model) refreshConversations() {
 		return
 	}
 	m.conversations = conversations
-	if m.convSelected >= len(m.conversations) {
-		m.convSelected = len(m.conversations) - 1
+
+	m.chatList = m.chatList[:0]
+	m.archivedCount = 0
+	for _, c := range conversations {
+		archived := m.isArchived(c.ChatJID)
+		if archived {
+			m.archivedCount++
+		}
+		if archived == m.showArchived {
+			m.chatList = append(m.chatList, c)
+		}
+	}
+	if m.convSelected >= len(m.chatList) {
+		m.convSelected = len(m.chatList) - 1
 	}
 	if m.convSelected < 0 {
 		m.convSelected = 0
@@ -429,6 +432,66 @@ func (m Model) sendReactionCmd(target history.Message, emoji string) bubbletea.C
 	}
 }
 
+// isArchived reports whether a chat is archived, looking it up once and caching
+// the answer. Archive events from the phone keep the cache current.
+func (m *Model) isArchived(chatJID string) bool {
+	if archived, ok := m.archived[chatJID]; ok {
+		return archived
+	}
+	archived := whatsapp.IsArchived(m.client, chatJID)
+	if m.archived != nil {
+		m.archived[chatJID] = archived
+	}
+	return archived
+}
+
+// setShowArchived switches the recent chats view between active and archived
+// chats.
+func (m *Model) setShowArchived(show bool) {
+	m.showArchived = show
+	m.convSelected = 0
+	m.convScroll = 0
+	m.refreshConversations()
+}
+
+type archiveResult struct {
+	err      error
+	chatJID  string
+	archived bool
+}
+
+// archiveChatCmd archives or unarchives the selected chat and syncs it to the
+// phone.
+func (m Model) archiveChatCmd(chat history.Conversation, archive bool) bubbletea.Cmd {
+	return func() bubbletea.Msg {
+		result := archiveResult{chatJID: chat.ChatJID, archived: archive}
+		if m.client == nil {
+			result.err = fmt.Errorf("not connected")
+			return result
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		result.err = whatsapp.SetArchived(ctx, m.client, chat.ChatJID, archive, chat.Timestamp)
+		return result
+	}
+}
+
+type archiveEventMsg whatsapp.ArchiveEvent
+
+// waitForArchive blocks until the next archive change arrives.
+func (m Model) waitForArchive() bubbletea.Cmd {
+	if m.archiveEvents == nil {
+		return nil
+	}
+	return func() bubbletea.Msg {
+		event, ok := <-m.archiveEvents
+		if !ok {
+			return nil
+		}
+		return archiveEventMsg(event)
+	}
+}
+
 // whatsappNumber returns the phone number for the currently selected chat.
 func (m Model) whatsappNumber() (string, error) {
 	var key string
@@ -441,10 +504,10 @@ func (m Model) whatsappNumber() (string, error) {
 	case 1:
 		key = m.activeChat
 	case 3:
-		if len(m.conversations) == 0 || m.convSelected >= len(m.conversations) {
+		if len(m.chatList) == 0 || m.convSelected >= len(m.chatList) {
 			return "", fmt.Errorf("no chat selected")
 		}
-		key = m.conversations[m.convSelected].ChatJID
+		key = m.chatList[m.convSelected].ChatJID
 	default:
 		return "", fmt.Errorf("no chat selected")
 	}
