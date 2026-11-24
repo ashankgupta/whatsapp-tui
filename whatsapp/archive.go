@@ -2,6 +2,8 @@ package whatsapp
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -108,5 +110,40 @@ func SetArchived(ctx context.Context, client *whatsmeow.Client, chat string, arc
 	if lid, ok := lidFor(ctx, client, jid); ok {
 		jid = lid
 	}
-	return client.SendAppState(ctx, appstate.BuildArchive(jid, archived, lastMessage, nil))
+	patch := appstate.BuildArchive(jid, archived, lastMessage, nil)
+	err = client.SendAppState(ctx, patch)
+	if err == nil || !errors.Is(err, whatsmeow.ErrAppStateUpdate) {
+		return err
+	}
+
+	// The server rejected the change because this device's copy of the chat
+	// settings is out of date and could not be patched (usually a missing
+	// sync key or a hash mismatch). Download the settings again from scratch
+	// and retry. Missing keys are requested from the phone in the background,
+	// so give them a moment to arrive.
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return archiveError(err)
+			case <-time.After(3 * time.Second):
+			}
+		}
+		if syncErr := client.FetchAppState(ctx, patch.Type, true, false); syncErr != nil {
+			err = syncErr
+			continue
+		}
+		if err = client.SendAppState(ctx, patch); err == nil {
+			return nil
+		}
+	}
+	return archiveError(err)
+}
+
+// archiveError explains a sync failure that survived a full resync.
+func archiveError(err error) error {
+	if errors.Is(err, appstate.ErrKeyNotFound) {
+		return fmt.Errorf("WhatsApp settings aren't synced to this device yet; open WhatsApp on your phone, wait a minute and try again (%w)", err)
+	}
+	return err
 }
