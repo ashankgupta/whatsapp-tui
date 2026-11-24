@@ -17,6 +17,12 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 	case bubbletea.WindowSizeMsg:
 		m.terminalWidth = msg.Width
 		m.terminalHeight = msg.Height
+		if graphics.mode == graphicsSixel {
+			oldW, oldH := graphics.cellW, graphics.cellH
+			if refreshCellSize() && (oldW != graphics.cellW || oldH != graphics.cellH) {
+				clear(m.sixels)
+			}
+		}
 		m.windowHeight = msg.Height - 10
 		if m.windowHeight < 3 {
 			m.windowHeight = 3
@@ -232,13 +238,14 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 				m.statusMessage = "Sending message..."
 				return m, m.sendMessageCmd()
 			case 3:
-				if len(m.conversations) > 0 && m.convSelected < len(m.conversations) {
-					m.openChat(m.conversations[m.convSelected].ChatJID)
+				if len(m.chatList) > 0 && m.convSelected < len(m.chatList) {
+					m.openChat(m.chatList[m.convSelected].ChatJID)
 				}
 			}
 
 		case bubbletea.KeyTab:
 			if m.step == 0 {
+				m.showArchived = false
 				m.refreshConversations()
 				m.step = 3
 				m.convSelected = 0
@@ -278,7 +285,7 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 					m.chatScroll++
 				}
 			case 3:
-				if m.convSelected < len(m.conversations)-1 {
+				if m.convSelected < len(m.chatList)-1 {
 					m.convSelected++
 					m.adjustConvScroll()
 				}
@@ -298,7 +305,11 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 					m.refreshConversations()
 				}
 			case 3:
-				m.step = 0
+				if m.showArchived {
+					m.setShowArchived(false)
+				} else {
+					m.step = 0
+				}
 			}
 
 		case bubbletea.KeyBackspace:
@@ -331,6 +342,24 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 				m.adjustSelection()
 			} else if m.step == 1 {
 				m.appendInput(typedText(msg.Runes))
+			} else if m.step == 3 {
+				switch string(msg.Runes) {
+				case "a":
+					if m.isArchiving || len(m.chatList) == 0 || m.convSelected >= len(m.chatList) {
+						return m, nil
+					}
+					chat := m.chatList[m.convSelected]
+					m.isArchiving = true
+					if m.showArchived {
+						m.statusMessage = "Unarchiving " + m.chatName(chat.ChatJID) + "..."
+					} else {
+						m.statusMessage = "Archiving " + m.chatName(chat.ChatJID) + "..."
+					}
+					return m, m.archiveChatCmd(chat, !m.showArchived)
+				case "v":
+					m.setShowArchived(!m.showArchived)
+					m.statusMessage = ""
+				}
 			}
 		}
 
@@ -387,7 +416,8 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 			if m.step == 1 && chatJID == m.activeChat {
 				m.chatMessages = append(m.chatMessages, record)
 				m.keepChatBottom(wasBottom)
-			} else if !msg.FromMe {
+			} else if !msg.FromMe && !m.isArchived(chatJID) {
+				// Archived chats stay quiet, like WhatsApp's "Keep chats archived".
 				m.unread[chatJID]++
 				m.statusMessage = "New message from " + m.chatName(chatJID)
 			}
@@ -639,6 +669,31 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 		} else if m.statusMessage == "" || !strings.HasPrefix(m.statusMessage, "Sent, but") {
 			m.statusMessage = "✅ File sent"
 		}
+
+	case archiveEventMsg:
+		m.archived[msg.Chat] = msg.Archived
+		if msg.Archived {
+			delete(m.unread, msg.Chat)
+		}
+		m.refreshConversations()
+		m.adjustConvScroll()
+		return m, m.waitForArchive()
+
+	case archiveResult:
+		m.isArchiving = false
+		if msg.err != nil {
+			m.statusMessage = "❌ Could not update archive: " + msg.err.Error()
+			return m, nil
+		}
+		m.archived[msg.chatJID] = msg.archived
+		if msg.archived {
+			delete(m.unread, msg.chatJID)
+			m.statusMessage = "✅ Archived " + m.chatName(msg.chatJID)
+		} else {
+			m.statusMessage = "✅ Unarchived " + m.chatName(msg.chatJID)
+		}
+		m.refreshConversations()
+		m.adjustConvScroll()
 
 	case rejectCallResult:
 		if msg.err != nil {

@@ -178,6 +178,9 @@ func (m Model) imagePreview(path string, maxCols, maxRows int) (string, error) {
 	if maxCols < 2 || maxRows < 1 {
 		return "", fmt.Errorf("preview is too small")
 	}
+	if graphics.mode == graphicsSixel && m.sixels != nil {
+		return m.sixelPreview(path, maxCols, maxRows)
+	}
 
 	key := fmt.Sprintf("%s|%d|%d", path, maxCols, maxRows)
 	if preview, ok := m.imagePreviews[key]; ok {

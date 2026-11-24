@@ -26,6 +26,7 @@ A terminal-based WhatsApp messenger built in Go using [whatsmeow](https://github
 - Modern WhatsApp-inspired dark UI with avatars, chat bubbles and unread badges
 - Smooth terminal UI with keyboard navigation
 - Live incoming messages and unread counts (`Tab` to open chats)
+- Archived chats stay hidden and quiet, synced with your phone — archive or unarchive with `a`, view them with `v`
 - QR-based login (session saved locally)
 - Written entirely in Go (no browser or Node.js required)
 
@@ -131,7 +132,7 @@ Messages are saved locally in `history.db`, so conversations survive restarts. O
 
 Connection diagnostics are appended to `whatsapp.log` so they do not interfere with the terminal UI.
 
-Incoming images are downloaded automatically and rendered inline using truecolor half-blocks; previews use the available chat width and height, and captions appear beneath the preview. Press `Ctrl+S` to save the latest downloadable media in the open chat. While reaction mode is active, `Ctrl+S` saves the selected message instead. Files are written to `downloads/` (gitignored).
+Incoming images are downloaded automatically and shown inline. In terminals with Sixel graphics (foot, WezTerm, Konsole, xterm, iTerm2, Windows Terminal 1.22+, and tmux 3.4+ running in one of them) images are drawn at full resolution; elsewhere they fall back to truecolor half-blocks. Set `WHATSAPP_TUI_IMAGES=blocks` to always use half-blocks, or `WHATSAPP_TUI_IMAGES=sixel` to force Sixel when detection misses your terminal. Previews use the available chat width and height, and captions appear beneath the preview. Press `Ctrl+S` to save the latest downloadable media in the open chat. While reaction mode is active, `Ctrl+S` saves the selected message instead. Files are written to `downloads/` (gitignored).
 
 Other incoming media types, such as videos, audio, stickers and documents, appear as labelled bubbles and can be saved on demand. Their original media metadata is stored in `history.db` so they can be re-downloaded later if needed. Images and files you send are cached in the local `media/` folder (gitignored). Images are limited to 16 MB for inline sending; larger images and all other file types are sent as documents.
 
@@ -143,7 +144,7 @@ Incoming WhatsApp calls appear as a banner. You can reject them with `Ctrl+D` or
 | --- | --- |
 | Contacts | `↑/↓` navigate, `Enter` open chat, `Tab` recent chats, `Ctrl+O` open in WhatsApp, `Esc` clear search, `q` quit |
 | Chat | type to compose, `Enter` send, `Ctrl+N` new line, `Ctrl+F` attach a local file (type/paste path, `Enter` send, `Esc` cancel, `Ctrl+U` clear), `Ctrl+S` save latest media (selected media while reacting), `↑/↓` scroll, `Ctrl+R` react (`↑/↓` pick message, `1`–`6` choose emoji, same emoji again removes, `Esc` cancel), `Ctrl+O` open in WhatsApp, `Esc` back, `Ctrl+C` quit |
-| Recent chats | `↑/↓` navigate, `Enter` open, `Tab` back, `Ctrl+O` open in WhatsApp, `q` quit |
+| Recent chats | `↑/↓` navigate, `Enter` open, `a` archive/unarchive, `v` show archived chats, `Tab` back, `Ctrl+O` open in WhatsApp, `q` quit |
 | Call alert | `Ctrl+D` reject, `Esc` hide |
 
 ## Disclaimer

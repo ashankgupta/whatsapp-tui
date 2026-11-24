@@ -40,12 +40,16 @@ func main() {
 	// Connect to WhatsApp (session is persisted in session.db)
 	client := whatsapp.Connect("file:session.db?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 
-	// Listen for incoming messages and calls
+	// Listen for incoming messages, calls and archive changes
 	incoming := whatsapp.Listen(client)
 	incomingCalls := whatsapp.ListenCalls(client)
+	archiveEvents := whatsapp.ListenArchive(client)
+
+	// Check for Sixel image support before the TUI takes over the terminal
+	tui.DetectGraphics()
 
 	// Start the TUI
-	p := bubbletea.NewProgram(tui.NewModel(contactsList, client, incoming, incomingCalls, store), bubbletea.WithAltScreen())
+	p := bubbletea.NewProgram(tui.NewModel(contactsList, client, incoming, incomingCalls, archiveEvents, store), bubbletea.WithAltScreen())
 
 	if err := p.Start(); err != nil {
 		fmt.Println("💥 App crashed:", err)

@@ -10,10 +10,7 @@ import (
 )
 
 func (m Model) Init() bubbletea.Cmd {
-	if m.incomingCalls != nil {
-		return bubbletea.Batch(m.waitForIncoming(), m.waitForCall())
-	}
-	return m.waitForIncoming()
+	return bubbletea.Batch(m.waitForIncoming(), m.waitForCall(), m.waitForArchive())
 }
 
 func (m Model) View() string {
@@ -21,7 +18,7 @@ func (m Model) View() string {
 	case 0:
 		return m.viewContacts()
 	case 1:
-		return m.viewChat()
+		return m.placeSixels(m.viewChat())
 	case 3:
 		return m.viewChats()
 	}
@@ -91,15 +88,25 @@ func (m Model) viewChat() string {
 }
 
 func (m Model) viewChats() string {
+	title, label := "Recent chats", "CHATS"
+	count := fmt.Sprintf("%d", len(m.chatList))
+	footer := "↑↓  Navigate  •  Enter  Open  •  a  Archive  •  v  Archived  •  Tab  Contacts  •  ^O  WhatsApp  •  q  Quit"
+	if m.showArchived {
+		title, label = "Archived", "ARCHIVED"
+		footer = "↑↓  Navigate  •  Enter  Open  •  a  Unarchive  •  v  Back to chats  •  Esc  Back  •  q  Quit"
+	} else if m.archivedCount > 0 {
+		count = fmt.Sprintf("%d  ·  %d archived", len(m.chatList), m.archivedCount)
+	}
+
 	header := m.renderBar(
-		brandStyle.Render("◆ WhatsApp")+mutedStyle.Render("  /  ")+titleStyle.Render("Recent chats"),
+		brandStyle.Render("◆ WhatsApp")+mutedStyle.Render("  /  ")+titleStyle.Render(title),
 		keyStyle.Render("Tab")+mutedStyle.Render(" contacts"),
 	)
 	return m.viewSections(
 		header,
-		m.renderFooter("↑↓  Navigate  •  Enter  Open  •  Tab  Contacts  •  ^O  WhatsApp  •  q  Quit"),
+		m.renderFooter(footer),
 		"",
-		m.renderSectionLabel("CHATS", fmt.Sprintf("%d", len(m.conversations))),
+		m.renderSectionLabel(label, count),
 		m.renderChatsList(),
 	)
 }
