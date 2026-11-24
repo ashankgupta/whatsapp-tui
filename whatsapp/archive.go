@@ -101,11 +101,13 @@ func IsArchived(client *whatsmeow.Client, chat string) bool {
 }
 
 // SetArchived archives or unarchives a chat for this account, syncing the
-// change to the phone and other linked devices.
-func SetArchived(ctx context.Context, client *whatsmeow.Client, chat string, archived bool, lastMessage time.Time) error {
+// change to the phone and other linked devices. When WhatsApp's copy of the
+// chat settings is broken and can't be repaired, the chat is archived on this
+// device only and synced is false.
+func SetArchived(ctx context.Context, client *whatsmeow.Client, chat string, archived bool, lastMessage time.Time) (synced bool, err error) {
 	jid, err := chatJID(chat)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if lid, ok := lidFor(ctx, client, jid); ok {
 		jid = lid
@@ -113,34 +115,91 @@ func SetArchived(ctx context.Context, client *whatsmeow.Client, chat string, arc
 	patch := appstate.BuildArchive(jid, archived, lastMessage, nil)
 	err = client.SendAppState(ctx, patch)
 	if err == nil || !errors.Is(err, whatsmeow.ErrAppStateUpdate) {
-		return err
+		return err == nil, err
 	}
+	client.Log.Warnf("Archive sync failed, trying to repair %s: %v", patch.Type, err)
 
-	// The server rejected the change because this device's copy of the chat
-	// settings is out of date and could not be patched (usually a missing
-	// sync key or a hash mismatch). Download the settings again from scratch
-	// and retry. Missing keys are requested from the phone in the background,
-	// so give them a moment to arrive.
+	if err = repairAndSend(ctx, client, patch); err == nil {
+		return true, nil
+	}
+	client.Log.Warnf("Could not repair %s, archiving %s on this device only: %v", patch.Type, jid, err)
+
+	// Archive locally so the chat still moves out of the way. It stays
+	// archived here until WhatsApp's copy of the settings is fixed.
+	if putErr := client.Store.ChatSettings.PutArchived(ctx, jid, archived); putErr != nil {
+		return false, archiveError(err)
+	}
+	return false, nil
+}
+
+// repairAndSend brings this device's copy of the chat settings back in sync
+// and sends the patch again.
+func repairAndSend(ctx context.Context, client *whatsmeow.Client, patch appstate.PatchInfo) error {
+	// First download the settings again from the server. Missing sync keys
+	// are requested from the phone in the background, so give them a moment.
+	var err error
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
-				return archiveError(err)
+				return err
 			case <-time.After(3 * time.Second):
 			}
 		}
-		if syncErr := client.FetchAppState(ctx, patch.Type, true, false); syncErr != nil {
-			err = syncErr
-			continue
+		if err = client.FetchAppState(ctx, patch.Type, true, false); err == nil {
+			if err = client.SendAppState(ctx, patch); err == nil || !errors.Is(err, whatsmeow.ErrAppStateUpdate) {
+				return err
+			}
+			break
 		}
-		if err = client.SendAppState(ctx, patch); err == nil {
-			return nil
+		if !errors.Is(err, appstate.ErrKeyNotFound) {
+			break
 		}
 	}
-	return archiveError(err)
+	if errors.Is(err, appstate.ErrKeyNotFound) {
+		return err
+	}
+
+	// The server's copy doesn't verify either ("mismatching LTHash"). Ask the
+	// phone for a fresh, verified copy, the way WhatsApp's own linked devices
+	// recover, then catch up on newer changes and retry.
+	if err = recoverFromPhone(ctx, client, patch.Type); err != nil {
+		return err
+	}
+	if err = client.FetchAppState(ctx, patch.Type, false, false); err != nil {
+		return err
+	}
+	return client.SendAppState(ctx, patch)
 }
 
-// archiveError explains a sync failure that survived a full resync.
+// recoverFromPhone asks the phone for an unencrypted copy of an app state
+// collection and waits until whatsmeow has stored it.
+func recoverFromPhone(ctx context.Context, client *whatsmeow.Client, name appstate.WAPatchName) error {
+	done := make(chan struct{}, 1)
+	handler := client.AddEventHandler(func(evt any) {
+		if sync, ok := evt.(*events.AppStateSyncComplete); ok && sync.Recovery && sync.Name == name {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+	defer client.RemoveEventHandler(handler)
+
+	if _, err := client.SendPeerMessage(ctx, whatsmeow.BuildAppStateRecoveryRequest(name)); err != nil {
+		return fmt.Errorf("could not ask your phone for the chat settings: %w", err)
+	}
+	wait, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	select {
+	case <-done:
+		return nil
+	case <-wait.Done():
+		return fmt.Errorf("your phone didn't send the chat settings in time")
+	}
+}
+
+// archiveError explains a sync failure that survived every repair attempt.
 func archiveError(err error) error {
 	if errors.Is(err, appstate.ErrKeyNotFound) {
 		return fmt.Errorf("WhatsApp settings aren't synced to this device yet; open WhatsApp on your phone, wait a minute and try again (%w)", err)

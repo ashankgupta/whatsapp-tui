@@ -692,6 +692,9 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 		} else {
 			m.statusMessage = "✅ Unarchived " + m.chatName(msg.chatJID)
 		}
+		if !msg.synced {
+			m.statusMessage += " on this device only (couldn't sync with your phone)"
+		}
 		m.refreshConversations()
 		m.adjustConvScroll()
 
