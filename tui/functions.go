@@ -458,6 +458,7 @@ type archiveResult struct {
 	err      error
 	chatJID  string
 	archived bool
+	synced   bool // false when only archived on this device
 }
 
 // archiveChatCmd archives or unarchives the selected chat and syncs it to the
@@ -469,9 +470,10 @@ func (m Model) archiveChatCmd(chat history.Conversation, archive bool) bubbletea
 			result.err = fmt.Errorf("not connected")
 			return result
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// Repairing out-of-sync chat settings can mean waiting for the phone.
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
-		result.err = whatsapp.SetArchived(ctx, m.client, chat.ChatJID, archive, chat.Timestamp)
+		result.synced, result.err = whatsapp.SetArchived(ctx, m.client, chat.ChatJID, archive, chat.Timestamp)
 		return result
 	}
 }
