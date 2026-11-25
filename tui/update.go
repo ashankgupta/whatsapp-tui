@@ -59,6 +59,51 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 			}
 		}
 
+		if m.form != nil {
+			return m, m.handleFormKey(msg)
+		}
+
+		if m.step == 3 {
+			if cmd, handled := m.handleChatSearchKey(msg); handled {
+				return m, cmd
+			}
+		}
+
+		// Contact shortcuts: ^N new and ^X delete on the contacts screen,
+		// ^E save or rename on the contacts screen and in a chat.
+		switch msg.String() {
+		case "ctrl+n":
+			if m.step == 0 {
+				m.openNewContactForm()
+				return m, nil
+			}
+		case "ctrl+e":
+			switch m.step {
+			case 0:
+				if !m.addContactSelected() && m.selected < len(m.filteredContacts) {
+					m.openEditContactForm(m.filteredContacts[m.selected].Number)
+				}
+				return m, nil
+			case 1:
+				if !m.attaching && !m.reacting && !m.savingMedia {
+					wasBottom := m.chatScroll >= m.maxChatScroll()
+					m.openEditContactForm(m.activeChat)
+					m.keepChatBottom(wasBottom)
+					return m, nil
+				}
+			case 3:
+				if len(m.chatList) > 0 && m.convSelected < len(m.chatList) {
+					m.openEditContactForm(m.chatList[m.convSelected].ChatJID)
+				}
+				return m, nil
+			}
+		case "ctrl+x":
+			if m.step == 0 && !m.addContactSelected() && m.selected < len(m.filteredContacts) {
+				m.openDeleteContactForm(m.filteredContacts[m.selected])
+				return m, nil
+			}
+		}
+
 		if m.step == 1 && !m.attaching && m.savingMedia {
 			switch msg.String() {
 			case "enter":
@@ -219,8 +264,8 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 		case bubbletea.KeyEnter:
 			switch m.step {
 			case 0:
-				if len(m.filteredContacts) == 0 {
-					m.statusMessage = "No contacts to select"
+				if m.addContactSelected() {
+					m.openNewContactForm()
 					return m, nil
 				}
 				m.openChat(m.filteredContacts[m.selected].Number)
@@ -252,6 +297,7 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 				m.convScroll = 0
 				m.statusMessage = ""
 			} else if m.step == 3 {
+				m.stopChatSearch()
 				m.step = 0
 			}
 
@@ -261,6 +307,8 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 				if m.selected > 0 {
 					m.selected--
 					m.adjustScroll()
+				} else {
+					m.addRowSelected = true
 				}
 			case 1:
 				if m.chatScroll > 0 {
@@ -276,7 +324,9 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 		case bubbletea.KeyDown:
 			switch m.step {
 			case 0:
-				if m.selected < len(m.filteredContacts)-1 {
+				if m.addRowSelected {
+					m.addRowSelected = false
+				} else if m.selected < len(m.filteredContacts)-1 {
 					m.selected++
 					m.adjustScroll()
 				}
@@ -295,7 +345,7 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 			switch m.step {
 			case 0:
 				m.searchQuery = ""
-				m.filteredContacts = m.contacts
+				m.filterContacts()
 				m.selected = 0
 				m.scrollOffset = 0
 			case 1:
@@ -305,7 +355,9 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 					m.refreshConversations()
 				}
 			case 3:
-				if m.showArchived {
+				if m.chatSearch != "" {
+					m.stopChatSearch()
+				} else if m.showArchived {
 					m.setShowArchived(false)
 				} else {
 					m.step = 0
@@ -359,9 +411,19 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 				case "v":
 					m.setShowArchived(!m.showArchived)
 					m.statusMessage = ""
+				case "s":
+					if len(m.chatList) > 0 && m.convSelected < len(m.chatList) {
+						m.openEditContactForm(m.chatList[m.convSelected].ChatJID)
+					}
+				case "/":
+					m.chatSearching = true
+					m.statusMessage = ""
 				}
 			}
 		}
+
+	case nameUpdateMsg, reloadPeopleMsg, peopleNamesMsg, groupNamesMsg:
+		return m, m.handleNameMsg(msg)
 
 	case incomingMessageMsg:
 		chatJID := msg.Chat
@@ -377,6 +439,25 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 			if m.step == 1 && chatJID == m.activeChat && !msg.FromMe {
 				m.statusMessage = "Reaction from " + m.chatName(chatJID)
 			}
+			return m, m.waitForIncoming()
+		}
+
+		if msg.IsEdit || msg.IsRevoke {
+			if m.store != nil {
+				var err error
+				if msg.IsRevoke {
+					_, err = m.store.MarkDeleted(msg.TargetID)
+				} else {
+					_, err = m.store.EditText(msg.TargetID, msg.Text)
+				}
+				if err != nil {
+					m.statusMessage = "Could not update message: " + err.Error()
+				}
+			}
+			wasBottom := m.step == 1 && !m.reacting && chatJID == m.activeChat && m.chatScroll >= m.maxChatScroll()
+			m.applyEdit(chatJID, msg.TargetID, msg.Text, msg.IsRevoke)
+			m.keepChatBottom(wasBottom)
+			m.refreshConversations()
 			return m, m.waitForIncoming()
 		}
 

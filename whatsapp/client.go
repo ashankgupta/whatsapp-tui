@@ -30,7 +30,9 @@ type IncomingMessage struct {
 	FromMe     bool
 	ID         string
 	IsReaction bool
-	TargetID   string
+	TargetID   string // message a reaction, edit or delete applies to
+	IsEdit     bool
+	IsRevoke   bool
 	MediaType  string
 	MediaName  string
 	Raw        *waE2E.Message
@@ -111,56 +113,38 @@ func Listen(client *whatsmeow.Client) <-chan IncomingMessage {
 			return
 		}
 
-		text := msg.Message.GetConversation()
-		if text == "" {
-			text = msg.Message.GetExtendedTextMessage().GetText()
+		if proto := msg.Message.GetProtocolMessage(); proto != nil {
+			update := IncomingMessage{
+				Sender:   senderKey(msg.Info),
+				Chat:     chatKey(msg.Info),
+				Time:     msg.Info.Timestamp,
+				FromMe:   msg.Info.IsFromMe,
+				TargetID: proto.GetKey().GetID(),
+			}
+			switch proto.GetType() {
+			case waE2E.ProtocolMessage_REVOKE:
+				update.IsRevoke = true
+			case waE2E.ProtocolMessage_MESSAGE_EDIT:
+				update.IsEdit = true
+				update.Text = editedText(proto.GetEditedMessage())
+			}
+			if (update.IsRevoke || (update.IsEdit && update.Text != "")) && update.TargetID != "" {
+				select {
+				case ch <- update:
+				default:
+				}
+			}
+			return
 		}
 
-		mediaType := ""
-		mediaName := ""
+		c, visible := describe(msg.Message)
+		if !visible {
+			return
+		}
+		text, mediaType, mediaName := c.text, c.mediaType, c.mediaName
 		var raw *waE2E.Message
-		if text == "" {
-			switch {
-			case msg.Message.GetImageMessage() != nil:
-				mediaType = "image"
-				raw = msg.Message
-				text = msg.Message.GetImageMessage().GetCaption()
-				if text == "" {
-					text = "📷 Photo"
-				}
-			case msg.Message.GetVideoMessage() != nil:
-				mediaType = "video"
-				raw = msg.Message
-				text = msg.Message.GetVideoMessage().GetCaption()
-				if text == "" {
-					text = "🎥 Video"
-				}
-			case msg.Message.GetAudioMessage() != nil:
-				mediaType = "audio"
-				raw = msg.Message
-				text = "🎵 Audio"
-				if msg.Message.GetAudioMessage().GetPTT() {
-					text = "🎤 Voice message"
-				}
-			case msg.Message.GetDocumentMessage() != nil:
-				mediaType = "document"
-				raw = msg.Message
-				mediaName = msg.Message.GetDocumentMessage().GetFileName()
-				text = msg.Message.GetDocumentMessage().GetCaption()
-				if text == "" {
-					if mediaName != "" {
-						text = "📄 " + mediaName
-					} else {
-						text = "📄 Document"
-					}
-				}
-			case msg.Message.GetStickerMessage() != nil:
-				mediaType = "sticker"
-				raw = msg.Message
-				text = "🧩 Sticker"
-			default:
-				text = "[unsupported message]"
-			}
+		if c.media {
+			raw = msg.Message
 		}
 
 		incoming := IncomingMessage{

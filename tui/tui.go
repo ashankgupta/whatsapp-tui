@@ -10,7 +10,8 @@ import (
 )
 
 func (m Model) Init() bubbletea.Cmd {
-	return bubbletea.Batch(m.waitForIncoming(), m.waitForCall(), m.waitForArchive())
+	return bubbletea.Batch(m.waitForIncoming(), m.waitForCall(), m.waitForArchive(),
+		m.waitForNames(), m.loadPeopleNamesCmd(), m.fetchGroupNamesCmd())
 }
 
 func (m Model) View() string {
@@ -35,6 +36,21 @@ func (m Model) viewSections(header, footer string, sections ...string) string {
 	parts = append(parts, sections...)
 	lines := strings.Split(strings.Join(parts, "\n"), "\n")
 
+	// The contact dialog sits just above the footer; the chat view places it
+	// in the input area itself.
+	if m.form != nil && m.step != 1 {
+		form := strings.Split(m.renderForm(), "\n")
+		if height := m.terminalHeight - 1 - len(form); height > 0 {
+			if len(lines) > height {
+				lines = lines[:height]
+			}
+			for len(lines) < height {
+				lines = append(lines, "")
+			}
+		}
+		lines = append(lines, form...)
+	}
+
 	if height := m.terminalHeight - 1; height > 0 {
 		if len(lines) > height {
 			lines = lines[:height]
@@ -58,7 +74,7 @@ func (m Model) viewContacts() string {
 
 	return m.viewSections(
 		header,
-		m.renderFooter("↑↓  Navigate  •  Enter  Open chat  •  Tab  Recent  •  ^O  Open in WhatsApp  •  q  Quit"),
+		m.renderFooter("↑↓  Navigate  •  Enter  Open chat  •  ^N  New contact  •  ^E  Edit  •  ^X  Delete  •  Tab  Recent  •  ^O  WhatsApp  •  q  Quit"),
 		"",
 		m.renderSearch(),
 		"",
@@ -68,7 +84,7 @@ func (m Model) viewContacts() string {
 }
 
 func (m Model) viewChat() string {
-	hints := "Enter  Send  •  ^N  New line  •  ^F  Attach  •  ^S  Save media  •  ^R  React  •  ^O  WhatsApp  •  Esc  Back"
+	hints := "Enter  Send  •  ^N  New line  •  ^F  Attach  •  ^S  Save media  •  ^R  React  •  ^E  Contact  •  ^O  WhatsApp  •  Esc  Back"
 	if m.savingMedia {
 		hints = "↑↓  Select  •  Enter  Save to downloads/  •  Esc  Cancel"
 	} else if m.reacting {
@@ -77,24 +93,35 @@ func (m Model) viewChat() string {
 	if m.attaching {
 		hints = "Enter  Send file  •  ^U  Clear  •  Esc  Cancel"
 	}
+	input := m.renderInput()
+	if m.form != nil {
+		input = m.renderForm()
+	}
 	return m.viewSections(
 		m.renderChatHeader(),
 		m.renderFooter(hints),
 		"",
 		m.renderChatMessages(),
 		"",
-		m.renderInput(),
+		input,
 	)
 }
 
 func (m Model) viewChats() string {
 	title, label := "Recent chats", "CHATS"
 	count := fmt.Sprintf("%d", len(m.chatList))
-	footer := "↑↓  Navigate  •  Enter  Open  •  a  Archive  •  v  Archived  •  Tab  Contacts  •  ^O  WhatsApp  •  q  Quit"
-	if m.showArchived {
+	footer := "↑↓  Navigate  •  Enter  Open  •  s  Save contact  •  a  Archive  •  v  Archived  •  Tab  Contacts  •  ^O  WhatsApp  •  q  Quit"
+	footer = "/  Search  •  " + footer
+	switch {
+	case m.chatSearching:
+		footer = "Type to search  •  ↑↓  Navigate  •  Enter  Open  •  ^U  Clear  •  Esc  Close search"
+		label, count = "RESULTS", fmt.Sprintf("%d", len(m.chatList))
+	case m.chatSearch != "":
+		label, count = "RESULTS", fmt.Sprintf("%d", len(m.chatList))
+	case m.showArchived:
 		title, label = "Archived", "ARCHIVED"
-		footer = "↑↓  Navigate  •  Enter  Open  •  a  Unarchive  •  v  Back to chats  •  Esc  Back  •  q  Quit"
-	} else if m.archivedCount > 0 {
+		footer = "/  Search  •  ↑↓  Navigate  •  Enter  Open  •  a  Unarchive  •  v  Back to chats  •  Esc  Back  •  q  Quit"
+	case m.archivedCount > 0:
 		count = fmt.Sprintf("%d  ·  %d archived", len(m.chatList), m.archivedCount)
 	}
 
@@ -105,6 +132,8 @@ func (m Model) viewChats() string {
 	return m.viewSections(
 		header,
 		m.renderFooter(footer),
+		"",
+		m.renderChatSearch(),
 		"",
 		m.renderSectionLabel(label, count),
 		m.renderChatsList(),
