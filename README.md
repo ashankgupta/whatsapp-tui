@@ -12,8 +12,10 @@ A terminal-based WhatsApp messenger built in Go using [whatsmeow](https://github
 
 ## Features
 
-- Search and filter contacts from a local JSON file
+- Real chat names from WhatsApp: names saved on your phone, group and channel titles and profile names
+- Add, rename and delete contacts from inside the app; `contacts.json` is created automatically
 - WhatsApp-style chat view with sent/received messages
+- Edited and deleted messages update like in WhatsApp; locations, polls, contacts and events show as readable bubbles
 - Inline image previews rendered with truecolor terminal blocks
 - Save incoming images, documents and other media with `Ctrl+S`
 - Send local files with `Ctrl+F` — images are sent as photos, everything else as documents
@@ -22,10 +24,9 @@ A terminal-based WhatsApp messenger built in Go using [whatsmeow](https://github
 - Open a direct chat in WhatsApp desktop/web with `Ctrl+O`
 - Persistent chat history stored locally in `history.db`
 - Full session persistence in `session.db` (no re-scan after first login)
-- Maintain local contact list in `contacts.json`
 - Modern WhatsApp-inspired dark UI with avatars, chat bubbles and unread badges
 - Smooth terminal UI with keyboard navigation
-- Live incoming messages and unread counts (`Tab` to open chats)
+- Live incoming messages and unread counts (`Tab` to open chats, `/` to search them)
 - Archived chats stay hidden and quiet, synced with your phone — archive or unarchive with `a`, view them with `v`
 - QR-based login (session saved locally)
 - Written entirely in Go (no browser or Node.js required)
@@ -92,29 +93,29 @@ go build -o whatsapp-tui .
 ./whatsapp-tui
 ```
 
+With `make` installed, `make run` builds and starts the app in one step (`make help` lists the other targets, such as `make windows` for a Windows `.exe`).
+
 No C compiler is needed — SQLite is a pure-Go driver, so `CGO_ENABLED=0` builds work on every platform. Run `whatsapp-tui --version` to see the installed version.
 
-### contacts.json Format
-Create a contacts.json file in the root directory with this format:
+### Contacts
+
+You don't need to set anything up. On first run the app creates an empty `contacts.json` next to it, and chats show the names WhatsApp already knows: the names saved on your phone, group and channel titles, and people's own profile names (shown with `~`, like in WhatsApp).
+
+Manage contacts from inside the app:
+
+- **Contacts screen:** select **+ New contact** at the top of the list (or press `Ctrl+N`) to add someone by number with country code and a name. `Ctrl+E` renames the selected contact and `Ctrl+X` deletes it. Typing a number in the search box first fills it in for you.
+- **Recent chats:** `s` saves the selected chat as a contact, prefilled with its WhatsApp name.
+- **Chat:** `Ctrl+E` saves or renames the person you're talking to.
+
+A name you save always takes priority over the WhatsApp name. Contacts are stored in `contacts.json` in this format, if you prefer to edit it by hand:
 
 ```json
 [
-  {
-    "name": "Alice",
-    "number": "1234567890"
-  },
-  {
-    "name": "Bob",
-    "number": "9876543210"
-  }
+  { "name": "Alice", "number": "919876543210" }
 ]
-
 ```
-### Important:
 
-#### 1. Phone numbers must be in international format, without + (e.g., 919876543210 for India).
-
-#### 2. No dashes, spaces, or special characters.
+Numbers are in international format without `+` (e.g. `919876543210` for India). The app accepts `+`, spaces and dashes when you type a number and cleans them up for you.
 
 ## QR Code Login
 
@@ -142,9 +143,9 @@ Incoming WhatsApp calls appear as a banner. You can reject them with `Ctrl+D` or
 
 | Screen | Keys |
 | --- | --- |
-| Contacts | `↑/↓` navigate, `Enter` open chat, `Tab` recent chats, `Ctrl+O` open in WhatsApp, `Esc` clear search, `q` quit |
-| Chat | type to compose, `Enter` send, `Ctrl+N` new line, `Ctrl+F` attach a local file (type/paste path, `Enter` send, `Esc` cancel, `Ctrl+U` clear), `Ctrl+S` save latest media (selected media while reacting), `↑/↓` scroll, `Ctrl+R` react (`↑/↓` pick message, `1`–`6` choose emoji, same emoji again removes, `Esc` cancel), `Ctrl+O` open in WhatsApp, `Esc` back, `Ctrl+C` quit |
-| Recent chats | `↑/↓` navigate, `Enter` open, `a` archive/unarchive, `v` show archived chats, `Tab` back, `Ctrl+O` open in WhatsApp, `q` quit |
+| Contacts | `↑/↓` navigate, `Enter` open chat, `Ctrl+N` new contact, `Ctrl+E` edit, `Ctrl+X` delete, `Tab` recent chats, `Ctrl+O` open in WhatsApp, `Esc` clear search, `q` quit |
+| Chat | type to compose, `Enter` send, `Ctrl+N` new line, `Ctrl+F` attach a local file (type/paste path, `Enter` send, `Esc` cancel, `Ctrl+U` clear), `Ctrl+S` save latest media (selected media while reacting), `↑/↓` scroll, `Ctrl+R` react (`↑/↓` pick message, `1`–`6` choose emoji, same emoji again removes, `Esc` cancel), `Ctrl+E` save/rename contact, `Ctrl+O` open in WhatsApp, `Esc` back, `Ctrl+C` quit |
+| Recent chats | `/` search by name or number (finds archived chats too; `Esc` closes), `↑/↓` navigate, `Enter` open, `s` save contact, `a` archive/unarchive, `v` show archived chats, `Tab` back, `Ctrl+O` open in WhatsApp, `q` quit |
 | Call alert | `Ctrl+D` reject, `Esc` hide |
 
 ## Disclaimer

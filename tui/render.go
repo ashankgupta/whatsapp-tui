@@ -67,7 +67,7 @@ func padBetween(left, right string, width int) string {
 
 // initials returns up to two uppercase initials for a name.
 func initials(name string) string {
-	fields := strings.Fields(name)
+	fields := strings.Fields(strings.TrimPrefix(name, "~ ")) // profile names are shown as "~ Name"
 	if len(fields) == 0 {
 		return "?"
 	}
@@ -165,11 +165,18 @@ func conversationLabel(c history.Conversation) string {
 
 // subtitle describes a chat under its name in the chat header.
 func (m Model) subtitle(chatJID string) string {
-	if strings.HasSuffix(chatJID, "@g.us") {
+	switch {
+	case strings.HasSuffix(chatJID, "@g.us"):
 		return "Group chat"
-	}
-	if strings.Contains(chatJID, "@") {
+	case strings.HasSuffix(chatJID, "@newsletter"):
+		return "Channel"
+	case chatJID == "status@broadcast":
+		return "Status updates"
+	case strings.Contains(chatJID, "@"):
 		return chatJID
+	}
+	if _, saved := m.savedContact(chatJID); !saved {
+		return "+" + chatJID + "  ·  ^E to save contact"
 	}
 	return "+" + chatJID
 }
@@ -195,21 +202,37 @@ func (m Model) renderSectionLabel(label, right string) string {
 }
 
 func (m Model) renderSearch() string {
+	return m.renderSearchBox(m.searchQuery, mutedStyle.Render("Search contacts"), m.searchQuery != "", true)
+}
+
+// renderChatSearch draws the recent chats search box, which is opened with /.
+func (m Model) renderChatSearch() string {
+	placeholder := mutedStyle.Render("Search chats  ") + keyStyle.Render("/")
+	if m.chatSearching {
+		placeholder = mutedStyle.Render("Search chats by name or number")
+	}
+	return m.renderSearchBox(m.chatSearch, placeholder, m.chatSearching || m.chatSearch != "", m.chatSearching)
+}
+
+func (m Model) renderSearchBox(query, placeholder string, active, cursor bool) string {
 	innerWidth := m.terminalWidth - 4
 	if innerWidth < 10 {
 		innerWidth = 10
 	}
 
 	style := searchBarStyle
-	query := m.searchQuery
-	if query == "" {
-		query = mutedStyle.Render("Search contacts")
-	} else {
+	if active {
 		style = searchBarActiveStyle
-		query = normalStyle.Render(truncate(query, innerWidth-6))
+	}
+	text := placeholder
+	if query != "" {
+		text = normalStyle.Render(truncate(query, innerWidth-6))
 	}
 
-	content := accentStyle.Render("⌕ ") + query + accentStyle.Render("▏")
+	content := accentStyle.Render("⌕ ") + text
+	if cursor {
+		content += accentStyle.Render("▏")
+	}
 	return style.Width(innerWidth).Render(content)
 }
 
@@ -226,10 +249,20 @@ func (m Model) listRange(scroll, total int) (int, int) {
 	return start, end
 }
 
+// renderAddContactRow is the selectable "New contact" row above the contacts.
+func (m Model) renderAddContactRow() string {
+	hint := "Add someone by phone number"
+	if query := strings.TrimSpace(m.searchQuery); query != "" {
+		hint = "Add \"" + query + "\" as a new contact"
+	}
+	plus := lipgloss.NewStyle().Background(colorAccent).Foreground(colorOnAccent).Bold(true).Width(4).Align(lipgloss.Center).Render("+")
+	return m.renderListRowWithAvatar(plus, "New contact", "^N", hint, 0, m.addContactSelected())
+}
+
 func (m Model) renderContactList() string {
 	start, end := m.listRange(m.scrollOffset, len(m.filteredContacts))
 
-	var lines []string
+	lines := []string{m.renderAddContactRow()}
 	for i := start; i < end; i++ {
 		c := m.filteredContacts[i]
 		conv, hasConv := m.lastConversation(c.Number)
@@ -241,10 +274,17 @@ func (m Model) renderContactList() string {
 			}
 			when = listTime(conv.Timestamp)
 		}
-		lines = append(lines, m.renderListRow(c.Name, when, preview, m.unread[c.Number], i == m.selected))
+		lines = append(lines, m.renderListRow(c.Name, when, preview, m.unread[c.Number], i == m.selected && !m.addRowSelected))
 	}
-	if len(lines) == 0 {
-		lines = append(lines, mutedStyle.Render("   No matching contacts"))
+	if len(m.filteredContacts) == 0 {
+		lines = append(lines, "")
+		if len(m.contacts) == 0 {
+			lines = append(lines,
+				mutedStyle.Render("   No contacts yet. Press ")+keyStyle.Render("Enter")+mutedStyle.Render(" to add one, or ")+keyStyle.Render("Tab")+mutedStyle.Render(" for recent chats"),
+				mutedStyle.Render("   and ")+keyStyle.Render("s")+mutedStyle.Render(" to save someone from there."))
+		} else {
+			lines = append(lines, mutedStyle.Render("   No matching contacts"))
+		}
 	}
 	return strings.Join(lines, "\n")
 }
@@ -259,12 +299,19 @@ func (m Model) renderChatsList() string {
 		if c.FromMe {
 			preview = "You: " + preview
 		}
-		lines = append(lines, m.renderListRow(m.chatName(c.ChatJID), listTime(c.Timestamp), preview, m.unread[c.ChatJID], i == m.convSelected))
+		when := listTime(c.Timestamp)
+		if m.chatSearch != "" && m.isArchived(c.ChatJID) {
+			when = "Archived  ·  " + when
+		}
+		lines = append(lines, m.renderListRow(m.chatName(c.ChatJID), when, preview, m.unread[c.ChatJID], i == m.convSelected))
 	}
 	if len(lines) == 0 {
 		empty := "   No conversations yet"
 		if m.showArchived {
 			empty = "   No archived chats"
+		}
+		if m.chatSearch != "" {
+			empty = "   No chats match \"" + m.chatSearch + "\""
 		}
 		lines = append(lines, mutedStyle.Render(empty))
 	}
@@ -274,6 +321,10 @@ func (m Model) renderChatsList() string {
 // renderListRow draws a two-line chat/contact row: avatar, name and time on
 // top, message preview and unread badge below.
 func (m Model) renderListRow(name, when, preview string, unread int, selected bool) string {
+	return m.renderListRowWithAvatar(avatar(name), name, when, preview, unread, selected)
+}
+
+func (m Model) renderListRowWithAvatar(av, name, when, preview string, unread int, selected bool) string {
 	const indent = 7 // bar + space + avatar + space
 	textWidth := m.terminalWidth - indent - 1
 	if textWidth < 10 {
@@ -307,7 +358,7 @@ func (m Model) renderListRow(name, when, preview string, unread int, selected bo
 	}
 	line2 := padBetween(previewStyle.Render(truncate(preview, textWidth-lipgloss.Width(badge)-1)), badge, textWidth)
 
-	top := bar + " " + avatar(name) + " " + line1
+	top := bar + " " + av + " " + line1
 	bottom := bar + strings.Repeat(" ", indent-1) + line2
 	if selected {
 		top = withBackground(top, colorSelected, m.terminalWidth)
@@ -795,6 +846,9 @@ func renderHints(hints string, width int) string {
 }
 
 func (m Model) renderFooter(hints string) string {
+	if m.form != nil {
+		hints = m.formHints()
+	}
 	inner := m.terminalWidth - barStyle.GetHorizontalPadding()
 	status := m.renderStatus()
 	if status == "" {

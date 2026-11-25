@@ -32,11 +32,13 @@ func (m Model) callBannerLines() int {
 
 // listRows is how many two-line rows fit on a list screen.
 func (m Model) listRows() int {
-	// Header, spacer, section label and footer; the contacts view adds a
-	// three-line search box and a spacer.
-	chrome := 4
-	if m.step != 3 {
-		chrome = 8
+	// Header, spacer, three-line search box, spacer, section label and footer.
+	chrome := 8
+	if m.step == 0 {
+		chrome += 2 // the "New contact" row
+	}
+	if m.form != nil {
+		chrome += m.formLines() + 2
 	}
 	rows := (m.terminalHeight - chrome - m.callBannerLines()) / 2
 	if rows < 1 {
@@ -53,6 +55,9 @@ func (m Model) chatLineBudget() int {
 	}
 	if m.attaching {
 		inputLines = 1
+	}
+	if m.form != nil {
+		inputLines = m.formLines()
 	}
 	// Two-line header, spacers around the history, bordered input and footer.
 	lines := m.terminalHeight - 7 - inputLines - m.callBannerLines()
@@ -90,7 +95,14 @@ func (m *Model) adjustSelection() {
 	m.adjustScroll()
 }
 
+// addContactSelected reports whether the "New contact" row is highlighted.
+// It is the only row when there are no contacts to show.
+func (m Model) addContactSelected() bool {
+	return m.addRowSelected || len(m.filteredContacts) == 0
+}
+
 func (m *Model) filterContacts() {
+	m.addRowSelected = false
 	if m.searchQuery == "" {
 		m.filteredContacts = m.contacts
 		return
@@ -132,25 +144,6 @@ func (m *Model) keepChatBottom(wasBottom bool) {
 func (m Model) messageHeight(i int) int {
 	block := m.messageBlock(i, false)
 	return strings.Count(block, "\n") + 1
-}
-
-// chatName resolves a chat key (phone number or group JID) to a display name.
-func (m Model) chatName(key string) string {
-	if key == "" {
-		return "Unknown"
-	}
-	for _, c := range m.contacts {
-		if c.Number == key {
-			return c.Name
-		}
-	}
-	if strings.HasSuffix(key, "@g.us") {
-		return "Group " + strings.SplitN(key, "@", 2)[0]
-	}
-	if strings.Contains(key, "@") {
-		return strings.SplitN(key, "@", 2)[0]
-	}
-	return key
 }
 
 // openChat loads the conversation history and switches to the chat view.
@@ -199,12 +192,19 @@ func (m *Model) refreshConversations() {
 
 	m.chatList = m.chatList[:0]
 	m.archivedCount = 0
+	query := strings.ToLower(strings.TrimSpace(m.chatSearch))
 	for _, c := range conversations {
 		archived := m.isArchived(c.ChatJID)
 		if archived {
 			m.archivedCount++
 		}
-		if archived == m.showArchived {
+		switch {
+		case query != "":
+			// Like WhatsApp, search finds archived chats too.
+			if m.chatMatches(c.ChatJID, query) {
+				m.chatList = append(m.chatList, c)
+			}
+		case archived == m.showArchived:
 			m.chatList = append(m.chatList, c)
 		}
 	}
@@ -214,6 +214,63 @@ func (m *Model) refreshConversations() {
 	if m.convSelected < 0 {
 		m.convSelected = 0
 	}
+}
+
+// chatMatches reports whether a chat's name or number contains the query.
+func (m Model) chatMatches(chatJID, query string) bool {
+	if strings.Contains(strings.ToLower(m.chatName(chatJID)), query) {
+		return true
+	}
+	digits := strings.NewReplacer("+", "", " ", "", "-", "").Replace(query)
+	return digits != "" && strings.Contains(strings.SplitN(chatJID, "@", 2)[0], digits)
+}
+
+// setChatSearch updates the recent chats search and jumps to the top result.
+func (m *Model) setChatSearch(query string) {
+	m.chatSearch = query
+	m.convSelected = 0
+	m.convScroll = 0
+	m.refreshConversations()
+}
+
+// stopChatSearch leaves search mode and shows the full list again.
+func (m *Model) stopChatSearch() {
+	m.chatSearching = false
+	if m.chatSearch != "" {
+		m.setChatSearch("")
+	}
+}
+
+// handleChatSearchKey handles typing while the recent chats search is open.
+// Letters go into the search instead of triggering shortcuts like a or q.
+func (m *Model) handleChatSearchKey(msg bubbletea.KeyMsg) (bubbletea.Cmd, bool) {
+	if !m.chatSearching {
+		return nil, false
+	}
+	switch msg.Type {
+	case bubbletea.KeyEsc:
+		m.stopChatSearch()
+	case bubbletea.KeyEnter:
+		if len(m.chatList) == 0 || m.convSelected >= len(m.chatList) {
+			return nil, true
+		}
+		chat := m.chatList[m.convSelected].ChatJID
+		m.stopChatSearch()
+		m.openChat(chat)
+	case bubbletea.KeyBackspace:
+		if r := []rune(m.chatSearch); len(r) > 0 {
+			m.setChatSearch(string(r[:len(r)-1]))
+		}
+	case bubbletea.KeyCtrlU:
+		m.setChatSearch("")
+	case bubbletea.KeySpace:
+		m.setChatSearch(m.chatSearch + " ")
+	case bubbletea.KeyRunes:
+		m.setChatSearch(m.chatSearch + typedText(msg.Runes))
+	default:
+		return nil, false // arrows, Tab, ^O and friends work as usual
+	}
+	return nil, true
 }
 
 // sendMessageResult is delivered back to Update after a send attempt.
@@ -359,6 +416,26 @@ func (m *Model) applyReaction(chatJID, targetID, sender, emoji string) {
 	}
 }
 
+// applyEdit updates an edited or deleted message in the open chat.
+func (m *Model) applyEdit(chatJID, targetID, text string, deleted bool) {
+	if m.step != 1 || m.activeChat != chatJID {
+		return
+	}
+	for i := range m.chatMessages {
+		msg := &m.chatMessages[i]
+		if msg.WaID != targetID {
+			continue
+		}
+		if deleted {
+			msg.Text = history.DeletedText
+			msg.MediaType, msg.MediaPath, msg.MediaName, msg.MediaRaw = "", "", "", nil
+		} else if msg.Text != history.DeletedText {
+			msg.Text = text
+		}
+		return
+	}
+}
+
 // reactionTargetPreview describes the message currently selected for reacting.
 func (m Model) reactionTargetPreview() string {
 	if m.reactionTarget < 0 || m.reactionTarget >= len(m.chatMessages) {
@@ -499,7 +576,7 @@ func (m Model) whatsappNumber() (string, error) {
 	var key string
 	switch m.step {
 	case 0:
-		if len(m.filteredContacts) == 0 || m.selected >= len(m.filteredContacts) {
+		if m.addContactSelected() || m.selected >= len(m.filteredContacts) {
 			return "", fmt.Errorf("no contact selected")
 		}
 		key = m.filteredContacts[m.selected].Number

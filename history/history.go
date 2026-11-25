@@ -93,7 +93,44 @@ CREATE INDEX IF NOT EXISTS idx_reactions_chat ON reactions(chat_jid);
 		}
 	}
 
+	// Older versions stored hidden protocol messages (key exchanges, poll
+	// votes, edits) as "[unsupported message]" bubbles. They carry no content.
+	if _, err := db.Exec(`DELETE FROM messages WHERE text = ? AND media_type = ''`, legacyUnsupported); err != nil {
+		db.Close()
+		return nil, err
+	}
+
 	return &Store{db: db}, nil
+}
+
+const legacyUnsupported = "[unsupported message]"
+
+// DeletedText replaces the text of a message its sender deleted.
+const DeletedText = "🚫 This message was deleted"
+
+// EditText replaces the text of an edited message. It reports whether the
+// message was found.
+func (s *Store) EditText(waID, text string) (bool, error) {
+	res, err := s.db.Exec(`UPDATE messages SET text = ? WHERE wa_id = ? AND text != ?`, text, waID, DeletedText)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// MarkDeleted replaces a deleted message with a placeholder and drops its
+// media, like WhatsApp's "This message was deleted".
+func (s *Store) MarkDeleted(waID string) (bool, error) {
+	res, err := s.db.Exec(
+		`UPDATE messages SET text = ?, media_type = '', media_path = '', media_name = '', media_raw = NULL WHERE wa_id = ?`,
+		DeletedText, waID,
+	)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
 }
 
 // ensureColumn adds a column to a table when it does not exist yet.

@@ -8,10 +8,14 @@ import (
 	"go.mau.fi/whatsmeow"
 )
 
-// NewModel creates a new TUI model with the given contacts, WhatsApp client and
-// persistent history store.
-func NewModel(contacts []contacts.Contact, client *whatsmeow.Client, incoming <-chan whatsapp.IncomingMessage, incomingCalls <-chan whatsapp.CallEvent, archiveEvents <-chan whatsapp.ArchiveEvent, store *history.Store) *Model {
+// NewModel creates a new TUI model with the given contacts (and the file they
+// are saved to), WhatsApp client, event streams and persistent history store.
+func NewModel(contactsPath string, contacts []contacts.Contact, client *whatsmeow.Client, incoming <-chan whatsapp.IncomingMessage, incomingCalls <-chan whatsapp.CallEvent, archiveEvents <-chan whatsapp.ArchiveEvent, nameEvents <-chan whatsapp.NameUpdate, store *history.Store) *Model {
 	m := &Model{
+		contactsPath:     contactsPath,
+		peopleNames:      make(map[string]string),
+		groupNames:       make(map[string]string),
+		nameEvents:       nameEvents,
 		contacts:         contacts,
 		filteredContacts: contacts,
 		selected:         0,

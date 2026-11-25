@@ -26,8 +26,13 @@ func main() {
 		return
 	}
 
-	// Load contacts
-	contactsList := contacts.LoadContacts("contacts.json")
+	// Load contacts (contacts.json is created on first run)
+	const contactsFile = "contacts.json"
+	contactsList, err := contacts.LoadContacts(contactsFile)
+	if err != nil {
+		fmt.Println("💥 Could not load contacts:", err)
+		os.Exit(1)
+	}
 
 	// Open persistent chat history
 	store, err := history.Open("history.db")
@@ -40,16 +45,17 @@ func main() {
 	// Connect to WhatsApp (session is persisted in session.db)
 	client := whatsapp.Connect("file:session.db?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 
-	// Listen for incoming messages, calls and archive changes
+	// Listen for incoming messages, calls, archive changes and name updates
 	incoming := whatsapp.Listen(client)
 	incomingCalls := whatsapp.ListenCalls(client)
 	archiveEvents := whatsapp.ListenArchive(client)
+	nameEvents := whatsapp.ListenNames(client)
 
 	// Check for Sixel image support before the TUI takes over the terminal
 	tui.DetectGraphics()
 
 	// Start the TUI
-	p := bubbletea.NewProgram(tui.NewModel(contactsList, client, incoming, incomingCalls, archiveEvents, store), bubbletea.WithAltScreen())
+	p := bubbletea.NewProgram(tui.NewModel(contactsFile, contactsList, client, incoming, incomingCalls, archiveEvents, nameEvents, store), bubbletea.WithAltScreen())
 
 	if err := p.Start(); err != nil {
 		fmt.Println("💥 App crashed:", err)

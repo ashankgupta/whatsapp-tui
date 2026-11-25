@@ -101,9 +101,9 @@ release:
   footer: |
     ## Installation
 
-    Download the archive for your platform below, extract it, and run `whatsapp-tui`
-    from a folder containing your `contacts.json`. Linux users can also install the
-    `.deb`, `.rpm`, `.apk` or Arch package.
+    Download the archive for your platform below, extract it, and run `whatsapp-tui`.
+    It creates `contacts.json` on first run; add contacts from inside the app.
+    Linux users can also install the `.deb`, `.rpm`, `.apk` or Arch package.
 
     On macOS, clear the Gatekeeper quarantine flag once after extracting:
 
