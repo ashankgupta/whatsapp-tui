@@ -587,6 +587,12 @@ func extensionFor(name, mimeType string) string {
 		return ".pdf"
 	case "text/plain":
 		return ".txt"
+	case "audio/ogg", "audio/ogg; codecs=opus":
+		return ".ogg"
+	case "audio/mpeg":
+		return ".mp3"
+	case "audio/mp4", "audio/aac":
+		return ".m4a"
 	default:
 		return ".bin"
 	}

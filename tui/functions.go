@@ -40,7 +40,7 @@ func (m Model) listRows() int {
 	if m.form != nil {
 		chrome += m.formLines() + 2
 	}
-	rows := (m.terminalHeight - chrome - m.callBannerLines()) / 2
+	rows := (m.terminalHeight - chrome - m.callBannerLines() - m.statusLines()) / 2
 	if rows < 1 {
 		rows = 1
 	}
@@ -60,7 +60,7 @@ func (m Model) chatLineBudget() int {
 		inputLines = m.formLines()
 	}
 	// Two-line header, spacers around the history, bordered input and footer.
-	lines := m.terminalHeight - 7 - inputLines - m.callBannerLines()
+	lines := m.terminalHeight - 7 - inputLines - m.callBannerLines() - m.statusLines()
 	if lines < 3 {
 		lines = 3
 	}
@@ -130,6 +130,29 @@ func (m *Model) maxChatScroll() int {
 		}
 	}
 	return 0
+}
+
+// scrollToMessage scrolls the chat just enough to show message i, keeping
+// the messages around it on screen.
+func (m *Model) scrollToMessage(i int) {
+	bottom := m.maxChatScroll()
+	if i >= bottom {
+		// The message fits in the bottom page: show the newest messages.
+		m.chatScroll = bottom
+		return
+	}
+	if i < m.chatScroll {
+		m.chatScroll = i
+		return
+	}
+	// Already visible if it starts within the current page.
+	budget, used := m.chatLineBudget(), 0
+	for j := m.chatScroll; j < i; j++ {
+		used += m.messageHeight(j)
+	}
+	if used+m.messageHeight(i) > budget {
+		m.chatScroll = i
+	}
 }
 
 // keepChatBottom restores the bottom scroll position after the chat height changes.

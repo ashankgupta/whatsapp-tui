@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"time"
+
+	"whatsapp-tui/audio"
 	"whatsapp-tui/contacts"
 	"whatsapp-tui/history"
 	"whatsapp-tui/whatsapp"
@@ -68,4 +71,12 @@ type Model struct {
 	sixelNextID        *int
 	mediaPending       map[string]bool
 	mediaErrors        map[string]string
+	recorder           *audio.Recorder // voice message being recorded
+	player             *audio.Player   // voice message being played
+	playingID          string          // WhatsApp ID of the message being played
+	playingLength      time.Duration
+	choosingAudio      bool // picking a voice message to play
+	audioTarget        int
+	audioScroll        int
+	statusSeq          int // bumped on every notification change
 }

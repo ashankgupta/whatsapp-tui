@@ -40,7 +40,7 @@ func (m Model) viewSections(header, footer string, sections ...string) string {
 	// in the input area itself.
 	if m.form != nil && m.step != 1 {
 		form := strings.Split(m.renderForm(), "\n")
-		if height := m.terminalHeight - 1 - len(form); height > 0 {
+		if height := m.terminalHeight - 1 - m.statusLines() - len(form); height > 0 {
 			if len(lines) > height {
 				lines = lines[:height]
 			}
@@ -51,13 +51,16 @@ func (m Model) viewSections(header, footer string, sections ...string) string {
 		lines = append(lines, form...)
 	}
 
-	if height := m.terminalHeight - 1; height > 0 {
+	if height := m.terminalHeight - 1 - m.statusLines(); height > 0 {
 		if len(lines) > height {
 			lines = lines[:height]
 		}
 		for len(lines) < height {
 			lines = append(lines, "")
 		}
+	}
+	if status := m.renderStatusLine(); status != "" {
+		lines = append(lines, status)
 	}
 	return strings.Join(append(lines, footer), "\n")
 }
@@ -84,7 +87,7 @@ func (m Model) viewContacts() string {
 }
 
 func (m Model) viewChat() string {
-	hints := "Enter  Send  •  ^N  New line  •  ^F  Attach  •  ^S  Save media  •  ^R  React  •  ^E  Contact  •  ^O  WhatsApp  •  Esc  Back"
+	hints := "Enter  Send  •  ^N  New line  •  ^F  Attach  •  ^T  Voice  •  ^P  Play  •  ^S  Save media  •  ^R  React  •  ^E  Contact  •  ^O  WhatsApp  •  Esc  Back"
 	if m.savingMedia {
 		hints = "↑↓  Select  •  Enter  Save to downloads/  •  Esc  Cancel"
 	} else if m.reacting {
@@ -92,6 +95,12 @@ func (m Model) viewChat() string {
 	}
 	if m.attaching {
 		hints = "Enter  Send file  •  ^U  Clear  •  Esc  Cancel"
+	}
+	switch {
+	case m.recorder != nil:
+		hints = "Enter  Send voice message  •  Esc  Discard"
+	case m.choosingAudio:
+		hints = "↑↓  Select voice message  •  Enter  Play  •  Esc  Cancel"
 	}
 	input := m.renderInput()
 	if m.form != nil {
