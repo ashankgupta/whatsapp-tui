@@ -414,7 +414,7 @@ func (m Model) renderChatMessages() string {
 		// Fill from the newest message upwards; the oldest block may be
 		// taller than the space left and is clipped at the top below.
 		for i := len(m.chatMessages) - 1; i >= start && used < budget; i-- {
-			b := m.messageBlock(i, m.savingMedia && i == m.saveTarget)
+			b := m.messageBlock(i, m.savingMedia && i == m.saveTarget || m.choosingAudio && i == m.audioTarget)
 			blocks = append(blocks, b)
 			used += strings.Count(b, "\n") + 1
 		}
@@ -424,7 +424,7 @@ func (m Model) renderChatMessages() string {
 	} else {
 		// Fill downwards; the last block may be clipped at the bottom below.
 		for i := start; i < len(m.chatMessages) && used < budget; i++ {
-			b := m.messageBlock(i, m.savingMedia && i == m.saveTarget)
+			b := m.messageBlock(i, m.savingMedia && i == m.saveTarget || m.choosingAudio && i == m.audioTarget)
 			blocks = append(blocks, b)
 			used += strings.Count(b, "\n") + 1
 		}
@@ -561,6 +561,16 @@ func (m Model) renderMediaBubble(msg history.Message, selected bool) string {
 	_, maxStyleWidth := m.bubbleWidths()
 	content := messageMediaLabel(msg)
 
+	if playKind(msg) != "" {
+		switch {
+		case msg.WaID != "" && msg.WaID == m.playingID && m.player != nil:
+			content += "\n" + accentStyle.Render("▶ Playing…")
+		case msg.WaID != "" && msg.WaID == m.playingID:
+			content += "\n" + mutedStyle.Render("⏳ Loading...")
+		case isPlayable(msg):
+			content += "\n" + mutedStyle.Render("▷ ^P to play")
+		}
+	}
 	if msg.MediaType == "image" {
 		if m.mediaPending[msg.WaID] {
 			content += "\n" + mutedStyle.Render("⏳ Downloading image...")
@@ -739,6 +749,10 @@ func (m Model) renderInput() string {
 	}
 	cursor := accentStyle.Render("▏")
 
+	if m.recorder != nil {
+		return m.renderRecording(innerWidth)
+	}
+
 	if m.attaching {
 		text := m.attachInput
 		if text == "" {
@@ -850,13 +864,23 @@ func (m Model) renderFooter(hints string) string {
 		hints = m.formHints()
 	}
 	inner := m.terminalWidth - barStyle.GetHorizontalPadding()
+	return m.renderBar(renderHints(hints, inner), "")
+}
+
+// renderStatusLine is the notification line shown above the footer, so it
+// never pushes the shortcut hints aside.
+func (m Model) renderStatusLine() string {
 	status := m.renderStatus()
 	if status == "" {
-		return m.renderBar(renderHints(hints, inner), "")
+		return ""
 	}
-	remaining := inner - lipgloss.Width(status) - 3
-	if remaining > 12 {
-		return m.renderBar(status, renderHints(hints, remaining))
+	return " " + truncate(status, max(4, m.terminalWidth-2))
+}
+
+// statusLines is the height of the notification line: 1 while one is shown.
+func (m Model) statusLines() int {
+	if m.renderStatus() == "" {
+		return 0
 	}
-	return m.renderBar(status, "")
+	return 1
 }

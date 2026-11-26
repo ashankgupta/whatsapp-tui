@@ -30,6 +30,7 @@ func TestDescribe(t *testing.T) {
 			Options: []*waE2E.PollCreationMessage_Option{{OptionName: proto.String("Yes")}, {OptionName: proto.String("No")}},
 		}}, true, "📊 Lunch?\n○ Yes\n○ No"},
 		{"contact", &waE2E.Message{ContactMessage: &waE2E.ContactMessage{DisplayName: proto.String("Bob")}}, true, "👤 Contact: Bob"},
+		{"voice note", &waE2E.Message{AudioMessage: &waE2E.AudioMessage{PTT: proto.Bool(true), Seconds: proto.Uint32(75)}}, true, "🎤 Voice message · 1:15"},
 		{"photo", &waE2E.Message{ImageMessage: &waE2E.ImageMessage{}}, true, "📷 Photo"},
 		{"unknown visible", &waE2E.Message{RequestPhoneNumberMessage: &waE2E.RequestPhoneNumberMessage{}}, true, "💬 Message not shown here"},
 	}

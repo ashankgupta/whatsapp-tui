@@ -69,6 +69,9 @@ func describe(m *waE2E.Message) (c content, ok bool) {
 		if m.GetAudioMessage().GetPTT() {
 			label = "🎤 Voice message"
 		}
+		if secs := m.GetAudioMessage().GetSeconds(); secs > 0 {
+			label += fmt.Sprintf(" · %d:%02d", secs/60, secs%60)
+		}
 		return media("audio", "", label), true
 	case m.GetDocumentMessage() != nil:
 		doc := m.GetDocumentMessage()

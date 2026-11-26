@@ -18,6 +18,7 @@ A terminal-based WhatsApp messenger built in Go using [whatsmeow](https://github
 - Edited and deleted messages update like in WhatsApp; locations, polls, contacts and events show as readable bubbles
 - Inline image previews rendered with truecolor terminal blocks
 - Save incoming images, documents and other media with `Ctrl+S`
+- Record and send voice messages with `Ctrl+T`; play voice messages and videos with `Ctrl+P` (needs [ffmpeg](https://ffmpeg.org))
 - Send local files with `Ctrl+F` — images are sent as photos, everything else as documents
 - Message reactions — see reactions under bubbles and react to any message with `Ctrl+R`
 - Incoming WhatsApp call alerts with reject (`Ctrl+D`)
@@ -137,6 +138,23 @@ Incoming images are downloaded automatically and shown inline. In terminals with
 
 Other incoming media types, such as videos, audio, stickers and documents, appear as labelled bubbles and can be saved on demand. Their original media metadata is stored in `history.db` so they can be re-downloaded later if needed. Images and files you send are cached in the local `media/` folder (gitignored). Images are limited to 16 MB for inline sending; larger images and all other file types are sent as documents.
 
+### Voice messages and videos
+
+Press `Ctrl+T` in a chat to start recording from your default microphone, then `Enter` to send it as a WhatsApp voice note (with duration and waveform) or `Esc` to discard it. Press `Ctrl+P` to play a voice message: the newest one is selected, `↑/↓` picks another, `Enter` plays it and `Ctrl+P` stops playback. Voice messages you receive are downloaded when you first play them, and quiet ones are played at normal loudness.
+
+Videos are in the same `Ctrl+P` list. A terminal can't play video, so they open in their own window and are downloaded the first time you play them.
+
+This uses [ffmpeg](https://ffmpeg.org), which isn't bundled. Install it once and the app finds it automatically:
+
+```bash
+sudo pacman -S ffmpeg      # Arch
+sudo apt install ffmpeg    # Debian/Ubuntu
+brew install ffmpeg        # macOS
+winget install ffmpeg      # Windows (restart the terminal afterwards)
+```
+
+Playback uses `ffplay`, which comes with ffmpeg, or `mpv` if that's what you have. On macOS, allow your terminal to use the microphone when asked.
+
 Incoming WhatsApp calls appear as a banner. You can reject them with `Ctrl+D` or hide the alert with `Esc`. `whatsmeow` does not support starting or answering calls, so `Ctrl+O` opens the contact's chat in WhatsApp Desktop/Web where you can use the call button.
 
 ### Keyboard shortcuts
@@ -144,7 +162,7 @@ Incoming WhatsApp calls appear as a banner. You can reject them with `Ctrl+D` or
 | Screen | Keys |
 | --- | --- |
 | Contacts | `↑/↓` navigate, `Enter` open chat, `Ctrl+N` new contact, `Ctrl+E` edit, `Ctrl+X` delete, `Tab` recent chats, `Ctrl+O` open in WhatsApp, `Esc` clear search, `q` quit |
-| Chat | type to compose, `Enter` send, `Ctrl+N` new line, `Ctrl+F` attach a local file (type/paste path, `Enter` send, `Esc` cancel, `Ctrl+U` clear), `Ctrl+S` save latest media (selected media while reacting), `↑/↓` scroll, `Ctrl+R` react (`↑/↓` pick message, `1`–`6` choose emoji, same emoji again removes, `Esc` cancel), `Ctrl+E` save/rename contact, `Ctrl+O` open in WhatsApp, `Esc` back, `Ctrl+C` quit |
+| Chat | type to compose, `Enter` send, `Ctrl+N` new line, `Ctrl+F` attach a local file (type/paste path, `Enter` send, `Esc` cancel, `Ctrl+U` clear), `Ctrl+T` record a voice message (`Enter` send, `Esc` discard), `Ctrl+P` play a voice message or video (`↑/↓` pick, `Enter` play, `Ctrl+P` again stops), `Ctrl+S` save latest media (selected media while reacting), `↑/↓` scroll, `Ctrl+R` react (`↑/↓` pick message, `1`–`6` choose emoji, same emoji again removes, `Esc` cancel), `Ctrl+E` save/rename contact, `Ctrl+O` open in WhatsApp, `Esc` back, `Ctrl+C` quit |
 | Recent chats | `/` search by name or number (finds archived chats too; `Esc` closes), `↑/↓` navigate, `Enter` open, `s` save contact, `a` archive/unarchive, `v` show archived chats, `Tab` back, `Ctrl+O` open in WhatsApp, `q` quit |
 | Call alert | `Ctrl+D` reject, `Esc` hide |
 

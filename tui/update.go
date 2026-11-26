@@ -12,7 +12,66 @@ import (
 	bubbletea "github.com/charmbracelet/bubbletea"
 )
 
+// clearStatusMsg hides a notification once it has been shown long enough.
+type clearStatusMsg struct{ seq int }
+
+// Update handles a message, then keeps the layout steady when the
+// notification line appears or disappears and hides finished notifications
+// after a few seconds.
 func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
+	if clear, ok := msg.(clearStatusMsg); ok {
+		if clear.seq != m.statusSeq || m.statusBusy() {
+			return m, nil
+		}
+		before := m.statusLines()
+		wasBottom := m.step == 1 && !m.reacting && m.chatScroll >= m.maxChatScroll()
+		m.statusMessage = ""
+		m.afterStatusResize(before, wasBottom)
+		return m, nil
+	}
+
+	status, before := m.statusMessage, m.statusLines()
+	wasBottom := m.step == 1 && !m.reacting && m.chatScroll >= m.maxChatScroll()
+	model, cmd := m.update(msg)
+	m.afterStatusResize(before, wasBottom)
+
+	if m.statusMessage != status {
+		m.statusSeq++
+		if m.statusMessage != "" && !m.statusBusy() {
+			seq, wait := m.statusSeq, 4*time.Second
+			if strings.HasPrefix(m.statusMessage, "❌") || strings.HasPrefix(m.statusMessage, "⚠️") {
+				wait = 8 * time.Second
+			}
+			cmd = bubbletea.Batch(cmd, bubbletea.Tick(wait, func(time.Time) bubbletea.Msg { return clearStatusMsg{seq: seq} }))
+		}
+	}
+	return model, cmd
+}
+
+// statusBusy reports whether the notification describes work still in
+// progress, which stays until the work finishes.
+func (m Model) statusBusy() bool {
+	return m.isSending || m.isUploading || m.isSavingMedia || m.isArchiving ||
+		m.player != nil || m.playingID != ""
+}
+
+// afterStatusResize keeps lists and the chat in place when the notification
+// line takes or gives back a row.
+func (m *Model) afterStatusResize(before int, wasBottom bool) {
+	if m.statusLines() == before {
+		return
+	}
+	switch m.step {
+	case 0:
+		m.adjustScroll()
+	case 1:
+		m.keepChatBottom(wasBottom)
+	case 3:
+		m.adjustConvScroll()
+	}
+}
+
+func (m *Model) update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 	switch msg := msg.(type) {
 	case bubbletea.WindowSizeMsg:
 		m.terminalWidth = msg.Width
@@ -38,6 +97,7 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 
 	case bubbletea.KeyMsg:
 		if msg.Type == bubbletea.KeyCtrlC {
+			m.stopAudio()
 			return m, bubbletea.Quit
 		}
 
@@ -61,6 +121,10 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 
 		if m.form != nil {
 			return m, m.handleFormKey(msg)
+		}
+
+		if cmd, handled := m.handleVoiceKey(msg); handled {
+			return m, cmd
 		}
 
 		if m.step == 3 {
@@ -246,6 +310,7 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 		}
 
 		if msg.String() == "q" && m.step != 1 && !(m.step == 0 && m.searchQuery != "") {
+			m.stopAudio()
 			return m, bubbletea.Quit
 		}
 
@@ -510,6 +575,23 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 			cmd = bubbletea.Batch(cmd, m.downloadImageCmd(record, msg.Raw))
 		}
 		return m, cmd
+
+	case voiceTickMsg:
+		return m, m.handleVoiceTick()
+
+	case audioFileMsg:
+		return m, m.handleAudioFile(msg)
+
+	case playDoneMsg:
+		if m.player == msg.player {
+			m.player = nil
+			m.playingID = ""
+			m.statusMessage = ""
+		}
+		return m, nil
+
+	case playReadyMsg:
+		return m, m.startPlayer(msg)
 
 	case incomingCallMsg:
 		wasBottom := m.step == 1 && !m.reacting && m.chatScroll >= m.maxChatScroll()
