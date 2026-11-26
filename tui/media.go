@@ -593,6 +593,14 @@ func extensionFor(name, mimeType string) string {
 		return ".mp3"
 	case "audio/mp4", "audio/aac":
 		return ".m4a"
+	case "video/mp4":
+		return ".mp4"
+	case "video/3gpp":
+		return ".3gp"
+	case "video/quicktime":
+		return ".mov"
+	case "video/webm":
+		return ".webm"
 	default:
 		return ".bin"
 	}

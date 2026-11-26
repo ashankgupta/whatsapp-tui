@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	bubbletea "github.com/charmbracelet/bubbletea"
@@ -22,9 +23,11 @@ type (
 	voiceTickMsg struct{}
 	// audioFileMsg is delivered when a voice message has been downloaded.
 	audioFileMsg struct {
-		waID string
-		path string
-		err  error
+		waID      string
+		mediaType string // stored type, kept as is (a video file can be a document)
+		kind      string // "audio" or "video": how to play it
+		path      string
+		err       error
 	}
 	// playDoneMsg is delivered when playback ends.
 	playDoneMsg struct{ player *audio.Player }
@@ -32,6 +35,7 @@ type (
 	// playback at normal loudness.
 	playReadyMsg struct {
 		waID     string
+		video    bool
 		path     string // file to play
 		temp     bool   // path is a leveled copy to delete afterwards
 		length   time.Duration
@@ -180,9 +184,39 @@ func voiceLabel(seconds uint32) string {
 	return "🎤 Voice message · " + formatDuration(time.Duration(seconds)*time.Second)
 }
 
-// isPlayable reports whether a message holds audio the app can play.
+// playKind says how to play a message: "audio", "video", or "" when it
+// isn't playable. Audio and video files sent as documents count too.
+func playKind(msg history.Message) string {
+	switch msg.MediaType {
+	case "audio", "video":
+		return msg.MediaType
+	case "document":
+		name := msg.MediaName
+		if name == "" {
+			name = msg.MediaPath
+		}
+		switch strings.ToLower(filepath.Ext(name)) {
+		case ".mp4", ".mkv", ".mov", ".webm", ".avi", ".m4v", ".3gp", ".wmv", ".flv", ".mpeg", ".mpg":
+			return "video"
+		case ".mp3", ".ogg", ".opus", ".m4a", ".wav", ".aac", ".flac", ".amr", ".wma":
+			return "audio"
+		}
+	}
+	return ""
+}
+
+// isPlayable reports whether a message holds audio or video the app can
+// play and that is still available.
 func isPlayable(msg history.Message) bool {
-	return msg.MediaType == "audio" && (fileExists(msg.MediaPath) || len(msg.MediaRaw) > 0)
+	return playKind(msg) != "" && (fileExists(msg.MediaPath) || len(msg.MediaRaw) > 0)
+}
+
+// mediaNoun names a playable message in status messages.
+func mediaNoun(mediaType string) string {
+	if mediaType == "video" {
+		return "video"
+	}
+	return "voice message"
 }
 
 // startChoosingAudio lets the user pick a voice message to play, starting
@@ -198,7 +232,7 @@ func (m *Model) startChoosingAudio() {
 			return
 		}
 	}
-	m.statusMessage = "No voice messages in this chat"
+	m.statusMessage = "No voice messages or videos in this chat"
 }
 
 // moveAudioTarget selects the previous (-1) or next (+1) playable message.
@@ -220,24 +254,27 @@ func (m *Model) playSelectedAudio() bubbletea.Cmd {
 		return nil
 	}
 	msg := m.chatMessages[m.audioTarget]
+	kind := playKind(msg)
 	if fileExists(msg.MediaPath) {
-		return m.playFile(msg.WaID, msg.MediaPath)
+		return m.playFile(msg.WaID, kind, msg.MediaPath)
 	}
+	m.stopPlayback()
 	m.playingID = msg.WaID
-	m.statusMessage = "Downloading voice message..."
+	m.statusMessage = "Downloading " + mediaNoun(kind) + "..."
 	return m.downloadAudioCmd(msg)
 }
 
-// downloadAudioCmd fetches an audio message so it can be played.
+// downloadAudioCmd fetches a voice message or video so it can be played.
 func (m Model) downloadAudioCmd(rec history.Message) bubbletea.Cmd {
 	return func() bubbletea.Msg {
-		result := audioFileMsg{waID: rec.WaID}
+		result := audioFileMsg{waID: rec.WaID, mediaType: rec.MediaType, kind: playKind(rec)}
 		var raw waE2E.Message
 		if err := proto.Unmarshal(rec.MediaRaw, &raw); err != nil || m.client == nil {
-			result.err = fmt.Errorf("voice message is no longer available")
+			result.err = fmt.Errorf("%s is no longer available", mediaNoun(result.kind))
 			return result
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		// Videos can be large; give them longer to download.
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
 		data, err := m.client.DownloadAny(ctx, &raw)
 		if err != nil {
@@ -245,7 +282,9 @@ func (m Model) downloadAudioCmd(rec history.Message) bubbletea.Cmd {
 			return result
 		}
 		mimeType := rawMediaMIME(&raw)
-		if mimeType == "" {
+		if mimeType == "" && result.kind == "video" {
+			mimeType = "video/mp4"
+		} else if mimeType == "" {
 			mimeType = audio.MIME
 		}
 		result.path, result.err = cacheMediaBytes(rec.WaID, rec.MediaName, mimeType, data)
@@ -259,11 +298,11 @@ func (m *Model) handleAudioFile(msg audioFileMsg) bubbletea.Cmd {
 		if m.playingID == msg.waID {
 			m.playingID = ""
 		}
-		m.statusMessage = "❌ Could not download voice message: " + msg.err.Error()
+		m.statusMessage = "❌ Could not download " + mediaNoun(msg.kind) + ": " + msg.err.Error()
 		return nil
 	}
 	if m.store != nil {
-		_ = m.store.SetMediaPath(msg.waID, "audio", msg.path, "")
+		_ = m.store.SetMediaPath(msg.waID, msg.mediaType, msg.path, m.mediaName(msg.waID))
 	}
 	for i := range m.chatMessages {
 		if m.chatMessages[i].WaID == msg.waID {
@@ -274,14 +313,28 @@ func (m *Model) handleAudioFile(msg audioFileMsg) bubbletea.Cmd {
 	if m.playingID != msg.waID || m.player != nil {
 		return nil
 	}
-	return m.playFile(msg.waID, msg.path)
+	return m.playFile(msg.waID, msg.kind, msg.path)
 }
 
-// playFile prepares a cached audio file at normal loudness, then plays it.
-func (m *Model) playFile(waID, path string) bubbletea.Cmd {
+// mediaName is the stored file name of a message in the open chat.
+func (m Model) mediaName(waID string) string {
+	for _, msg := range m.chatMessages {
+		if msg.WaID == waID {
+			return msg.MediaName
+		}
+	}
+	return ""
+}
+
+// playFile plays a cached voice message or video. Voice messages are first
+// leveled to normal loudness; videos open in their own window.
+func (m *Model) playFile(waID, mediaType, path string) bubbletea.Cmd {
 	m.stopPlayback()
 	m.playingID = waID
 	m.playingLength = 0
+	if mediaType == "video" {
+		return m.startPlayer(playReadyMsg{waID: waID, video: true, path: path})
+	}
 	m.statusMessage = "Loading voice message..."
 	return func() bubbletea.Msg {
 		ready := playReadyMsg{waID: waID, path: path}
@@ -303,13 +356,22 @@ func (m *Model) startPlayer(msg playReadyMsg) bubbletea.Cmd {
 		}
 		return nil
 	}
-	player, err := audio.Play(msg.path, msg.temp)
+	var (
+		player *audio.Player
+		err    error
+	)
+	if msg.video {
+		player, err = audio.PlayVideo(msg.path)
+	} else {
+		player, err = audio.Play(msg.path, msg.temp)
+	}
 	if err != nil {
 		m.playingID = ""
 		m.statusMessage = "❌ " + err.Error()
 		return nil
 	}
 	m.player = player
+	m.playingVideo = msg.video
 	m.playingLength = msg.length
 	m.statusMessage = m.playbackStatus()
 	return bubbletea.Batch(voiceTick(), func() bubbletea.Msg {
@@ -342,6 +404,9 @@ func (m Model) playbackStatus() string {
 	if m.playingLength > 0 {
 		elapsed = min(elapsed, m.playingLength)
 		progress = formatDuration(elapsed) + " / " + formatDuration(m.playingLength)
+	}
+	if m.playingVideo {
+		return "▶ Playing video in its own window  " + progress + "  •  ^P Stop"
 	}
 	return "▶ Playing voice message  " + progress + "  •  ^P Stop"
 }

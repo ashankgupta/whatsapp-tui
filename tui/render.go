@@ -561,7 +561,7 @@ func (m Model) renderMediaBubble(msg history.Message, selected bool) string {
 	_, maxStyleWidth := m.bubbleWidths()
 	content := messageMediaLabel(msg)
 
-	if msg.MediaType == "audio" {
+	if playKind(msg) != "" {
 		switch {
 		case msg.WaID != "" && msg.WaID == m.playingID && m.player != nil:
 			content += "\n" + accentStyle.Render("▶ Playing…")

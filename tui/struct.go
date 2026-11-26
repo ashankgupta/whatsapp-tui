@@ -75,6 +75,7 @@ type Model struct {
 	player             *audio.Player   // voice message being played
 	playingID          string          // WhatsApp ID of the message being played
 	playingLength      time.Duration
+	playingVideo       bool // the player is showing a video window
 	choosingAudio      bool // picking a voice message to play
 	audioTarget        int
 	audioScroll        int

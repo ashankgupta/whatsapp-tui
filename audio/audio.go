@@ -410,6 +410,28 @@ func Play(path string, removeAfter bool) (*Player, error) {
 	return p, nil
 }
 
+// PlayVideo opens a video in its own window with ffplay or mpv. A terminal
+// can only show still images, so videos can't play inside the app.
+func PlayVideo(path string) (*Player, error) {
+	var cmd *exec.Cmd
+	if ffplay, err := exec.LookPath("ffplay"); err == nil {
+		cmd = exec.Command(ffplay, "-autoexit", "-loglevel", "quiet", "-window_title", "WhatsApp video", path)
+	} else if mpv, err := exec.LookPath("mpv"); err == nil {
+		cmd = exec.Command(mpv, "--really-quiet", "--no-terminal", "--force-window", "--title=WhatsApp video", path)
+	} else {
+		return nil, errors.New("no video player found; " + InstallHint() + " (it includes ffplay) or install mpv")
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("could not start video player: %w", err)
+	}
+	p := &Player{Started: time.Now(), cmd: cmd, done: make(chan struct{})}
+	go func() {
+		_ = cmd.Wait()
+		close(p.done)
+	}()
+	return p, nil
+}
+
 // Wait blocks until playback ends.
 func (p *Player) Wait() { <-p.done }
 

@@ -100,7 +100,7 @@ func (m Model) viewChat() string {
 	case m.recorder != nil:
 		hints = "Enter  Send voice message  •  Esc  Discard"
 	case m.choosingAudio:
-		hints = "↑↓  Select voice message  •  Enter  Play  •  Esc  Cancel"
+		hints = "↑↓  Select voice message or video  •  Enter  Play  •  Esc  Cancel"
 	}
 	input := m.renderInput()
 	if m.form != nil {
