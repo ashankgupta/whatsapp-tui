@@ -45,3 +45,30 @@ func TestDescribe(t *testing.T) {
 		}
 	}
 }
+
+func TestQuoteOf(t *testing.T) {
+	reply := &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+		Text: proto.String("yes"),
+		ContextInfo: &waE2E.ContextInfo{
+			StanzaID:      proto.String("ABC123"),
+			Participant:   proto.String("919876543210:7@s.whatsapp.net"),
+			QuotedMessage: &waE2E.Message{Conversation: proto.String("lunch?")},
+		},
+	}}
+	id, text, sender := quoteOf(reply)
+	if id != "ABC123" || text != "lunch?" || sender != "919876543210" {
+		t.Errorf("quoteOf = %q, %q, %q", id, text, sender)
+	}
+
+	photo := &waE2E.Message{ImageMessage: &waE2E.ImageMessage{ContextInfo: &waE2E.ContextInfo{
+		StanzaID:      proto.String("IMG1"),
+		QuotedMessage: &waE2E.Message{ImageMessage: &waE2E.ImageMessage{}},
+	}}}
+	if id, text, _ := quoteOf(photo); id != "IMG1" || text != "📷 Photo" {
+		t.Errorf("image reply: %q, %q", id, text)
+	}
+
+	if id, _, _ := quoteOf(&waE2E.Message{Conversation: proto.String("hi")}); id != "" {
+		t.Errorf("plain message reported a quote: %q", id)
+	}
+}

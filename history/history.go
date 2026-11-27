@@ -22,6 +22,13 @@ type Message struct {
 	MediaName string
 	MediaRaw  []byte
 	Reactions map[string]string
+
+	// ReplyID, ReplyText and ReplySender describe the message this one quotes.
+	// ReplySender is a phone number (or JID) and is resolved to a name by the UI.
+	ReplyID     string
+	ReplyText   string
+	ReplySender string
+	Edited      bool
 }
 
 // Conversation is the latest message of a chat, used for the chat list.
@@ -86,6 +93,10 @@ CREATE INDEX IF NOT EXISTS idx_reactions_chat ON reactions(chat_jid);
 		{"media_path", "TEXT NOT NULL DEFAULT ''"},
 		{"media_name", "TEXT NOT NULL DEFAULT ''"},
 		{"media_raw", "BLOB"},
+		{"reply_id", "TEXT NOT NULL DEFAULT ''"},
+		{"reply_text", "TEXT NOT NULL DEFAULT ''"},
+		{"reply_sender", "TEXT NOT NULL DEFAULT ''"},
+		{"edited", "INTEGER NOT NULL DEFAULT 0"},
 	} {
 		if err := ensureColumn(db, "messages", column.name, column.ddl); err != nil {
 			db.Close()
@@ -111,7 +122,7 @@ const DeletedText = "🚫 This message was deleted"
 // EditText replaces the text of an edited message. It reports whether the
 // message was found.
 func (s *Store) EditText(waID, text string) (bool, error) {
-	res, err := s.db.Exec(`UPDATE messages SET text = ? WHERE wa_id = ? AND text != ?`, text, waID, DeletedText)
+	res, err := s.db.Exec(`UPDATE messages SET text = ?, edited = 1 WHERE wa_id = ? AND text != ?`, text, waID, DeletedText)
 	if err != nil {
 		return false, err
 	}
@@ -194,10 +205,12 @@ func (s *Store) Save(m Message) (bool, error) {
 
 	res, err := s.db.Exec(
 		`INSERT OR IGNORE INTO messages
-		 (chat_jid, sender_jid, from_me, text, timestamp, wa_id, media_type, media_path, media_name, media_raw)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 (chat_jid, sender_jid, from_me, text, timestamp, wa_id, media_type, media_path, media_name, media_raw,
+		  reply_id, reply_text, reply_sender)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.ChatJID, m.SenderJID, boolToInt(m.FromMe), m.Text, m.Timestamp.Unix(), waID,
 		m.MediaType, m.MediaPath, m.MediaName, m.MediaRaw,
+		m.ReplyID, m.ReplyText, m.ReplySender,
 	)
 	if err != nil {
 		return false, err
@@ -219,7 +232,8 @@ func (s *Store) Messages(chatJID string, limit int) ([]Message, error) {
 
 	rows, err := s.db.Query(
 		`SELECT id, chat_jid, sender_jid, from_me, text, timestamp, COALESCE(wa_id, ''),
-		        COALESCE(media_type, ''), COALESCE(media_path, ''), COALESCE(media_name, ''), media_raw
+		        COALESCE(media_type, ''), COALESCE(media_path, ''), COALESCE(media_name, ''), media_raw,
+		        COALESCE(reply_id, ''), COALESCE(reply_text, ''), COALESCE(reply_sender, ''), COALESCE(edited, 0)
 		 FROM (
 			 SELECT * FROM messages
 			 WHERE chat_jid = ?
@@ -239,13 +253,16 @@ func (s *Store) Messages(chatJID string, limit int) ([]Message, error) {
 		var (
 			m       Message
 			fromMe  int
+			edited  int
 			unixSec int64
 		)
 		if err := rows.Scan(&m.ID, &m.ChatJID, &m.SenderJID, &fromMe, &m.Text, &unixSec, &m.WaID,
-			&m.MediaType, &m.MediaPath, &m.MediaName, &m.MediaRaw); err != nil {
+			&m.MediaType, &m.MediaPath, &m.MediaName, &m.MediaRaw,
+			&m.ReplyID, &m.ReplyText, &m.ReplySender, &edited); err != nil {
 			return nil, err
 		}
 		m.FromMe = fromMe != 0
+		m.Edited = edited != 0
 		m.Timestamp = time.Unix(unixSec, 0)
 		messages = append(messages, m)
 	}

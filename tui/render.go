@@ -394,7 +394,7 @@ func (m Model) renderChatMessages() string {
 		return lipgloss.Place(m.terminalWidth, budget, lipgloss.Center, lipgloss.Center, empty)
 	}
 
-	if m.reacting {
+	if m.selecting() {
 		return padTop(m.renderReactionView(budget), budget)
 	}
 
@@ -540,7 +540,27 @@ func (m Model) renderMessageBubble(msg history.Message, selected bool) string {
 	if msg.MediaType != "" {
 		return m.renderMediaBubble(msg, selected)
 	}
-	return m.renderBubble(msg, m.withSender(msg, msg.Text), 0, selected)
+	return m.renderBubble(msg, m.withSender(msg, m.withQuote(msg, msg.Text)), 0, selected)
+}
+
+// withQuote puts the quoted message of a reply above its text: the author's
+// name and one line of the original, behind an accent bar.
+func (m Model) withQuote(msg history.Message, content string) string {
+	if msg.ReplyID == "" {
+		return content
+	}
+	_, maxStyleWidth := m.bubbleWidths()
+	width := maxStyleWidth - 6
+	if width < 4 {
+		width = 4
+	}
+	bar := accentStyle.Render("▎ ")
+	quoted := singleLine(msg.ReplyText)
+	if quoted == "" {
+		quoted = "Original message"
+	}
+	name := accentBoldStyle.Render(truncate(singleLine(m.quoteLabel(msg)), width))
+	return bar + name + "\n" + bar + secondaryStyle.Render(truncate(quoted, width)) + "\n" + content
 }
 
 // withSender prefixes group messages from others with the sender's name,
@@ -578,7 +598,7 @@ func (m Model) renderMediaBubble(msg history.Message, selected bool) string {
 			content += "\n" + errorTextStyle.Render("❌ "+errText)
 		}
 	}
-	content = m.withSender(msg, content)
+	content = m.withSender(msg, m.withQuote(msg, content))
 
 	var imageBlock string
 	imageWidth := 0
@@ -690,7 +710,11 @@ func (m Model) renderBubble(msg history.Message, content string, forcedWidth int
 	if reactionText != "" {
 		body += "\n" + reactionStyle.Width(innerWidth).Render(reactionText)
 	}
-	timeLine := timeStyle.Width(innerWidth).Align(lipgloss.Right).Render(msg.Timestamp.Format("15:04"))
+	stamp := msg.Timestamp.Format("15:04")
+	if msg.Edited {
+		stamp = "edited " + stamp
+	}
+	timeLine := timeStyle.Width(innerWidth).Align(lipgloss.Right).Render(stamp)
 	bubble := bubbleStyle.Width(styleWidth).Render(withBackground(body+"\n"+timeLine, fill, 0))
 
 	// Keep a one-column gutter from the screen edge.
@@ -781,6 +805,32 @@ func (m Model) renderInput() string {
 		rendered = append(rendered, text)
 	}
 	return inputBarStyle.Width(innerWidth).Render(strings.Join(rendered, "\n"))
+}
+
+// renderComposerBanner shows the message being replied to or edited, right above the input.
+func (m Model) renderComposerBanner() string {
+	var label string
+	var target *history.Message
+	switch {
+	case m.editing != nil:
+		label, target = "✎ Editing message", m.editing
+	case m.replyTo != nil:
+		who := "You"
+		if !m.replyTo.FromMe {
+			who = m.senderName(*m.replyTo)
+		}
+		label, target = "↩ Replying to "+singleLine(who), m.replyTo
+	default:
+		return ""
+	}
+	width := m.terminalWidth - 2
+	if width < 10 {
+		width = 10
+	}
+	head := accentBoldStyle.Render(label)
+	room := width - lipgloss.Width(label) - 5
+	line := " " + head + mutedStyle.Render("  "+truncate(singleLine(target.Text), max(room, 1))+"  ·  Esc cancel")
+	return truncate(line, width+1)
 }
 
 func (m Model) renderCallBanner() string {

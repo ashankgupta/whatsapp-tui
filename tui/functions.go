@@ -30,6 +30,20 @@ func (m Model) callBannerLines() int {
 	return 0
 }
 
+// selecting reports whether a message picker (react or message actions) is
+// open. The chat is then pinned to the picked message, not the bottom.
+func (m Model) selecting() bool {
+	return m.reacting || m.acting
+}
+
+// composerLines is the height of the "Replying to…" / "Editing" line above the input.
+func (m Model) composerLines() int {
+	if m.replyTo != nil || m.editing != nil {
+		return 1
+	}
+	return 0
+}
+
 // listRows is how many two-line rows fit on a list screen.
 func (m Model) listRows() int {
 	// Header, spacer, three-line search box, spacer, section label and footer.
@@ -60,7 +74,7 @@ func (m Model) chatLineBudget() int {
 		inputLines = m.formLines()
 	}
 	// Two-line header, spacers around the history, bordered input and footer.
-	lines := m.terminalHeight - 7 - inputLines - m.callBannerLines() - m.statusLines()
+	lines := m.terminalHeight - 7 - inputLines - m.callBannerLines() - m.statusLines() - m.composerLines()
 	if lines < 3 {
 		lines = 3
 	}
@@ -157,7 +171,7 @@ func (m *Model) scrollToMessage(i int) {
 
 // keepChatBottom restores the bottom scroll position after the chat height changes.
 func (m *Model) keepChatBottom(wasBottom bool) {
-	if wasBottom && m.step == 1 && !m.reacting {
+	if wasBottom && m.step == 1 && !m.selecting() {
 		m.chatScroll = m.maxChatScroll()
 	}
 }
@@ -181,6 +195,9 @@ func (m *Model) openChat(chatJID string) {
 	m.chatScroll = 0
 	m.statusMessage = ""
 	m.reacting = false
+	m.acting = false
+	m.confirmDelete = false
+	m.replyTo, m.editing = nil, nil
 	m.reactionTarget = 0
 	m.reactionScroll = 0
 	m.attaching = false
@@ -298,11 +315,14 @@ func (m *Model) handleChatSearchKey(msg bubbletea.KeyMsg) (bubbletea.Cmd, bool) 
 
 // sendMessageResult is delivered back to Update after a send attempt.
 type sendMessageResult struct {
-	err     error
-	text    string
-	msgID   string
-	chatJID string
-	time    time.Time
+	err         error
+	text        string
+	msgID       string
+	chatJID     string
+	time        time.Time
+	replyID     string
+	replyText   string
+	replySender string
 }
 
 // recipientJID builds the destination JID for the active chat.
@@ -314,6 +334,11 @@ func (m Model) recipientJID() (waTypes.JID, error) {
 }
 
 func (m Model) sendMessageCmd() bubbletea.Cmd {
+	var reply *history.Message
+	if m.replyTo != nil {
+		quoted := *m.replyTo
+		reply = &quoted
+	}
 	return func() bubbletea.Msg {
 		text := strings.TrimSpace(strings.Join(m.messageLines, "\n"))
 		if text == "" {
@@ -331,17 +356,26 @@ func (m Model) sendMessageCmd() bubbletea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		resp, err := m.client.SendMessage(ctx, recipient, &waE2E.Message{Conversation: &text})
+		out := &waE2E.Message{Conversation: &text}
+		result := sendMessageResult{text: text, chatJID: m.activeChat}
+		if reply != nil {
+			result.replyID = reply.WaID
+			result.replyText = quoteSnippet(reply.Text)
+			result.replySender = m.quoteSenderKey(*reply)
+			out = &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{
+				Text:        &text,
+				ContextInfo: m.quoteContext(result.replyID, result.replySender, result.replyText),
+			}}
+		}
+
+		resp, err := m.client.SendMessage(ctx, recipient, out)
 		if err != nil {
 			return sendMessageResult{err: err}
 		}
 
-		return sendMessageResult{
-			text:    text,
-			msgID:   string(resp.ID),
-			chatJID: m.activeChat,
-			time:    resp.Timestamp,
-		}
+		result.msgID = string(resp.ID)
+		result.time = resp.Timestamp
+		return result
 	}
 }
 
@@ -454,6 +488,7 @@ func (m *Model) applyEdit(chatJID, targetID, text string, deleted bool) {
 			msg.MediaType, msg.MediaPath, msg.MediaName, msg.MediaRaw = "", "", "", nil
 		} else if msg.Text != history.DeletedText {
 			msg.Text = text
+			msg.Edited = true
 		}
 		return
 	}

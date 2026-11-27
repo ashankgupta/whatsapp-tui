@@ -58,6 +58,10 @@ type Model struct {
 	reacting           bool
 	reactionTarget     int
 	reactionScroll     int
+	acting             bool             // picking a message to reply to, edit or delete
+	confirmDelete      bool             // waiting for y/n to delete the selected message
+	replyTo            *history.Message // message the next send replies to
+	editing            *history.Message // own message being edited in the input box
 	attaching          bool
 	attachInput        string
 	isUploading        bool

@@ -244,3 +244,43 @@ func joinLines(lines ...string) string {
 	}
 	return strings.Join(out, "\n")
 }
+
+// quoteOf returns the message a reply quotes: its ID, the text WhatsApp shows
+// for it and the phone number (or JID) of its sender. All are empty when the
+// message is not a reply.
+func quoteOf(m *waE2E.Message) (id, text, sender string) {
+	var info *waE2E.ContextInfo
+	switch {
+	case m.GetExtendedTextMessage() != nil:
+		info = m.GetExtendedTextMessage().GetContextInfo()
+	case m.GetImageMessage() != nil:
+		info = m.GetImageMessage().GetContextInfo()
+	case m.GetVideoMessage() != nil:
+		info = m.GetVideoMessage().GetContextInfo()
+	case m.GetAudioMessage() != nil:
+		info = m.GetAudioMessage().GetContextInfo()
+	case m.GetDocumentMessage() != nil:
+		info = m.GetDocumentMessage().GetContextInfo()
+	case m.GetStickerMessage() != nil:
+		info = m.GetStickerMessage().GetContextInfo()
+	case m.GetLocationMessage() != nil:
+		info = m.GetLocationMessage().GetContextInfo()
+	case m.GetContactMessage() != nil:
+		info = m.GetContactMessage().GetContextInfo()
+	}
+	id = info.GetStanzaID()
+	if id == "" {
+		return "", "", ""
+	}
+	if c, ok := describe(info.GetQuotedMessage()); ok {
+		text = c.text
+	}
+	sender = info.GetParticipant()
+	if user, _, found := strings.Cut(sender, "@"); found {
+		// Drop the device part ("123:4@s.whatsapp.net") but keep other servers' JIDs intact.
+		if strings.HasSuffix(sender, "@s.whatsapp.net") {
+			sender, _, _ = strings.Cut(user, ":")
+		}
+	}
+	return id, text, sender
+}

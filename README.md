@@ -21,6 +21,7 @@ A terminal-based WhatsApp messenger built in Go using [whatsmeow](https://github
 - Record and send voice messages with `Ctrl+T`; play voice messages and videos with `Ctrl+P` (needs [ffmpeg](https://ffmpeg.org))
 - Send local files with `Ctrl+F` — images are sent as photos, everything else as documents
 - Message reactions — see reactions under bubbles and react to any message with `Ctrl+R`
+- Reply, edit and delete — `Ctrl+A` picks a message to reply to (quoted above your text), edit your own text messages (within 20 minutes) or delete your own for everyone
 - Incoming WhatsApp call alerts with reject (`Ctrl+D`)
 - Open a direct chat in WhatsApp desktop/web with `Ctrl+O`
 - Persistent chat history stored locally in `history.db`
@@ -162,7 +163,7 @@ Incoming WhatsApp calls appear as a banner. You can reject them with `Ctrl+D` or
 | Screen | Keys |
 | --- | --- |
 | Contacts | `↑/↓` navigate, `Enter` open chat, `Ctrl+N` new contact, `Ctrl+E` edit, `Ctrl+X` delete, `Tab` recent chats, `Ctrl+O` open in WhatsApp, `Esc` clear search, `q` quit |
-| Chat | type to compose, `Enter` send, `Ctrl+N` new line, `Ctrl+F` attach a local file (type/paste path, `Enter` send, `Esc` cancel, `Ctrl+U` clear), `Ctrl+T` record a voice message (`Enter` send, `Esc` discard), `Ctrl+P` play a voice message or video (`↑/↓` pick, `Enter` play, `Ctrl+P` again stops), `Ctrl+S` save latest media (selected media while reacting), `↑/↓` scroll, `Ctrl+R` react (`↑/↓` pick message, `1`–`6` choose emoji, same emoji again removes, `Esc` cancel), `Ctrl+E` save/rename contact, `Ctrl+O` open in WhatsApp, `Esc` back, `Ctrl+C` quit |
+| Chat | type to compose, `Enter` send, `Ctrl+N` new line, `Ctrl+F` attach a local file (type/paste path, `Enter` send, `Esc` cancel, `Ctrl+U` clear), `Ctrl+T` record a voice message (`Enter` send, `Esc` discard), `Ctrl+P` play a voice message or video (`↑/↓` pick, `Enter` play, `Ctrl+P` again stops), `Ctrl+S` save latest media (selected media while reacting), `↑/↓` scroll, `Ctrl+R` react (`↑/↓` pick message, `1`–`6` choose emoji, same emoji again removes, `Esc` cancel), `Ctrl+A` message actions (`↑/↓` pick message, `r` reply, `e` edit your own, `d` delete your own then `y` to confirm, `Esc` cancel; `Esc` also cancels a pending reply or edit), `Ctrl+E` save/rename contact, `Ctrl+O` open in WhatsApp, `Esc` back, `Ctrl+C` quit |
 | Recent chats | `/` search by name or number (finds archived chats too; `Esc` closes), `↑/↓` navigate, `Enter` open, `s` save contact, `a` archive/unarchive, `v` show archived chats, `Tab` back, `Ctrl+O` open in WhatsApp, `q` quit |
 | Call alert | `Ctrl+D` reject, `Esc` hide |
 
