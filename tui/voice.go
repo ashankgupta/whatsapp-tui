@@ -460,7 +460,7 @@ func (m *Model) handleVoiceKey(msg bubbletea.KeyMsg) (bubbletea.Cmd, bool) {
 		}
 		return nil, true
 	}
-	if m.attaching || m.reacting || m.savingMedia {
+	if m.attaching || m.selecting() || m.savingMedia {
 		return nil, false
 	}
 	switch msg.String() {

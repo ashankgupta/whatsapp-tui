@@ -87,11 +87,20 @@ func (m Model) viewContacts() string {
 }
 
 func (m Model) viewChat() string {
-	hints := "Enter  Send  •  ^N  New line  •  ^F  Attach  •  ^T  Voice  •  ^P  Play  •  ^S  Save media  •  ^R  React  •  ^E  Contact  •  ^O  WhatsApp  •  Esc  Back"
+	hints := "Enter  Send  •  ^N  New line  •  ^A  Reply/Edit/Delete  •  ^F  Attach  •  ^T  Voice  •  ^P  Play  •  ^S  Save  •  ^R  React  •  ^E  Contact  •  Esc  Back"
 	if m.savingMedia {
 		hints = "↑↓  Select  •  Enter  Save to downloads/  •  Esc  Cancel"
 	} else if m.reacting {
 		hints = "↑↓  Select message  •  1-6  React  •  Esc  Cancel"
+	} else if m.acting {
+		hints = "↑↓  Select message  •  r  Reply  •  e  Edit  •  d  Delete  •  Esc  Cancel"
+		if m.confirmDelete {
+			hints = "y  Delete for everyone  •  any other key  Cancel"
+		}
+	} else if m.editing != nil {
+		hints = "Enter  Save edit  •  Esc  Cancel edit"
+	} else if m.replyTo != nil {
+		hints = "Enter  Send reply  •  Esc  Cancel reply  •  ^A  Message actions"
 	}
 	if m.attaching {
 		hints = "Enter  Send file  •  ^U  Clear  •  Esc  Cancel"
@@ -106,14 +115,13 @@ func (m Model) viewChat() string {
 	if m.form != nil {
 		input = m.renderForm()
 	}
-	return m.viewSections(
-		m.renderChatHeader(),
-		m.renderFooter(hints),
-		"",
-		m.renderChatMessages(),
-		"",
-		input,
-	)
+	sections := []string{"", m.renderChatMessages(), ""}
+	if banner := m.renderComposerBanner(); banner != "" && !m.selecting() {
+		sections = append(sections, banner)
+	} else if banner != "" {
+		sections = append(sections, "")
+	}
+	return m.viewSections(m.renderChatHeader(), m.renderFooter(hints), append(sections, input)...)
 }
 
 func (m Model) viewChats() string {

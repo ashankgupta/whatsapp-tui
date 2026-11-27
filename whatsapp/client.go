@@ -21,21 +21,24 @@ import (
 
 // IncomingMessage is a simplified representation of a WhatsApp message event.
 type IncomingMessage struct {
-	Sender     string
-	PushName   string
-	Chat       string
-	Text       string
-	Time       time.Time
-	IsGroup    bool
-	FromMe     bool
-	ID         string
-	IsReaction bool
-	TargetID   string // message a reaction, edit or delete applies to
-	IsEdit     bool
-	IsRevoke   bool
-	MediaType  string
-	MediaName  string
-	Raw        *waE2E.Message
+	Sender      string
+	PushName    string
+	Chat        string
+	Text        string
+	Time        time.Time
+	IsGroup     bool
+	FromMe      bool
+	ID          string
+	IsReaction  bool
+	TargetID    string // message a reaction, edit or delete applies to
+	IsEdit      bool
+	IsRevoke    bool
+	MediaType   string
+	MediaName   string
+	Raw         *waE2E.Message
+	ReplyID     string // message this one replies to
+	ReplyText   string
+	ReplySender string
 }
 
 // CallEvent is a simplified representation of a WhatsApp call event.
@@ -147,18 +150,22 @@ func Listen(client *whatsmeow.Client) <-chan IncomingMessage {
 			raw = msg.Message
 		}
 
+		replyID, replyText, replySender := quoteOf(msg.Message)
 		incoming := IncomingMessage{
-			Sender:    senderKey(msg.Info),
-			PushName:  msg.Info.PushName,
-			Chat:      chatKey(msg.Info),
-			Text:      text,
-			Time:      msg.Info.Timestamp,
-			IsGroup:   msg.Info.IsGroup,
-			FromMe:    msg.Info.IsFromMe,
-			ID:        string(msg.Info.ID),
-			MediaType: mediaType,
-			MediaName: mediaName,
-			Raw:       raw,
+			ReplyID:     replyID,
+			ReplyText:   replyText,
+			ReplySender: replySender,
+			Sender:      senderKey(msg.Info),
+			PushName:    msg.Info.PushName,
+			Chat:        chatKey(msg.Info),
+			Text:        text,
+			Time:        msg.Info.Timestamp,
+			IsGroup:     msg.Info.IsGroup,
+			FromMe:      msg.Info.IsFromMe,
+			ID:          string(msg.Info.ID),
+			MediaType:   mediaType,
+			MediaName:   mediaName,
+			Raw:         raw,
 		}
 
 		select {

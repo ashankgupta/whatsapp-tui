@@ -24,14 +24,14 @@ func (m *Model) Update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 			return m, nil
 		}
 		before := m.statusLines()
-		wasBottom := m.step == 1 && !m.reacting && m.chatScroll >= m.maxChatScroll()
+		wasBottom := m.step == 1 && !m.selecting() && m.chatScroll >= m.maxChatScroll()
 		m.statusMessage = ""
 		m.afterStatusResize(before, wasBottom)
 		return m, nil
 	}
 
 	status, before := m.statusMessage, m.statusLines()
-	wasBottom := m.step == 1 && !m.reacting && m.chatScroll >= m.maxChatScroll()
+	wasBottom := m.step == 1 && !m.selecting() && m.chatScroll >= m.maxChatScroll()
 	model, cmd := m.update(msg)
 	m.afterStatusResize(before, wasBottom)
 
@@ -104,14 +104,14 @@ func (m *Model) update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 		if m.activeCall != nil {
 			switch msg.String() {
 			case "ctrl+d":
-				wasBottom := m.step == 1 && !m.reacting && m.chatScroll >= m.maxChatScroll()
+				wasBottom := m.step == 1 && !m.selecting() && m.chatScroll >= m.maxChatScroll()
 				call := *m.activeCall
 				m.activeCall = nil
 				m.statusMessage = "Rejecting call..."
 				m.keepChatBottom(wasBottom)
 				return m, m.rejectCallCmd(call)
 			case "esc":
-				wasBottom := m.step == 1 && !m.reacting && m.chatScroll >= m.maxChatScroll()
+				wasBottom := m.step == 1 && !m.selecting() && m.chatScroll >= m.maxChatScroll()
 				m.activeCall = nil
 				m.statusMessage = "Call alert hidden"
 				m.keepChatBottom(wasBottom)
@@ -149,7 +149,7 @@ func (m *Model) update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 				}
 				return m, nil
 			case 1:
-				if !m.attaching && !m.reacting && !m.savingMedia {
+				if !m.attaching && !m.selecting() && !m.savingMedia {
 					wasBottom := m.chatScroll >= m.maxChatScroll()
 					m.openEditContactForm(m.activeChat)
 					m.keepChatBottom(wasBottom)
@@ -232,6 +232,10 @@ func (m *Model) update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 			return m, nil
 		}
 
+		if m.step == 1 && m.acting {
+			return m, m.handleActionKey(msg)
+		}
+
 		if m.step == 1 && m.attaching {
 			switch msg.Type {
 			case bubbletea.KeyEsc:
@@ -284,6 +288,19 @@ func (m *Model) update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 			if wasBottom {
 				m.chatScroll = m.maxChatScroll()
 			}
+			return m, nil
+		}
+
+		if m.step == 1 && msg.String() == "ctrl+a" {
+			if len(m.chatMessages) == 0 {
+				m.statusMessage = "No message to reply to"
+				return m, nil
+			}
+			m.acting = true
+			m.confirmDelete = false
+			m.reactionTarget = len(m.chatMessages) - 1
+			m.reactionScroll = m.chatScroll
+			m.statusMessage = ""
 			return m, nil
 		}
 
@@ -345,6 +362,10 @@ func (m *Model) update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 					return m, nil
 				}
 				m.isSending = true
+				if m.editing != nil {
+					m.statusMessage = "Saving edit..."
+					return m, m.editMessageCmd(*m.editing, text)
+				}
 				m.statusMessage = "Sending message..."
 				return m, m.sendMessageCmd()
 			case 3:
@@ -414,6 +435,10 @@ func (m *Model) update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 				m.selected = 0
 				m.scrollOffset = 0
 			case 1:
+				if m.replyTo != nil || m.editing != nil {
+					m.cancelComposer()
+					return m, nil
+				}
 				m.step = m.returnStep
 				m.statusMessage = ""
 				if m.step == 3 {
@@ -498,7 +523,7 @@ func (m *Model) update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 					m.statusMessage = "Could not save reaction: " + err.Error()
 				}
 			}
-			wasBottom := m.step == 1 && !m.reacting && chatJID == m.activeChat && m.chatScroll >= m.maxChatScroll()
+			wasBottom := m.step == 1 && !m.selecting() && chatJID == m.activeChat && m.chatScroll >= m.maxChatScroll()
 			m.applyReaction(chatJID, msg.TargetID, msg.Sender, msg.Text)
 			m.keepChatBottom(wasBottom)
 			if m.step == 1 && chatJID == m.activeChat && !msg.FromMe {
@@ -519,14 +544,14 @@ func (m *Model) update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 					m.statusMessage = "Could not update message: " + err.Error()
 				}
 			}
-			wasBottom := m.step == 1 && !m.reacting && chatJID == m.activeChat && m.chatScroll >= m.maxChatScroll()
+			wasBottom := m.step == 1 && !m.selecting() && chatJID == m.activeChat && m.chatScroll >= m.maxChatScroll()
 			m.applyEdit(chatJID, msg.TargetID, msg.Text, msg.IsRevoke)
 			m.keepChatBottom(wasBottom)
 			m.refreshConversations()
 			return m, m.waitForIncoming()
 		}
 
-		wasBottom := m.step == 1 && !m.reacting && chatJID == m.activeChat && m.chatScroll >= m.maxChatScroll()
+		wasBottom := m.step == 1 && !m.selecting() && chatJID == m.activeChat && m.chatScroll >= m.maxChatScroll()
 
 		record := history.Message{
 			ChatJID:   chatJID,
@@ -538,6 +563,10 @@ func (m *Model) update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 			MediaType: msg.MediaType,
 			MediaName: msg.MediaName,
 			MediaRaw:  encodeMediaRaw(msg.Raw),
+
+			ReplyID:     msg.ReplyID,
+			ReplyText:   msg.ReplyText,
+			ReplySender: msg.ReplySender,
 		}
 		if record.Timestamp.IsZero() {
 			record.Timestamp = time.Now()
@@ -594,7 +623,7 @@ func (m *Model) update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 		return m, m.startPlayer(msg)
 
 	case incomingCallMsg:
-		wasBottom := m.step == 1 && !m.reacting && m.chatScroll >= m.maxChatScroll()
+		wasBottom := m.step == 1 && !m.selecting() && m.chatScroll >= m.maxChatScroll()
 		event := whatsapp.CallEvent(msg)
 		switch event.Type {
 		case "offer":
@@ -638,6 +667,10 @@ func (m *Model) update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 			Text:      msg.text,
 			Timestamp: timestamp,
 			WaID:      msg.msgID,
+
+			ReplyID:     msg.replyID,
+			ReplyText:   msg.replyText,
+			ReplySender: msg.replySender,
 		}
 
 		inserted := true
@@ -654,9 +687,10 @@ func (m *Model) update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 		}
 
 		if msg.chatJID == m.activeChat {
+			m.replyTo = nil
 			m.messageLines = []string{""}
 			m.currentLine = 0
-			if !m.reacting {
+			if !m.selecting() {
 				m.chatScroll = m.maxChatScroll()
 			}
 		}
@@ -664,6 +698,54 @@ func (m *Model) update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 
 		if m.statusMessage == "" || !strings.HasPrefix(m.statusMessage, "Sent, but") {
 			m.statusMessage = "✅ Message sent"
+		}
+
+	case editResult:
+		m.isSending = false
+		if msg.err != nil {
+			m.statusMessage = "❌ Could not edit message: " + msg.err.Error()
+			return m, nil
+		}
+		if m.store != nil {
+			if _, err := m.store.EditText(msg.targetID, msg.text); err != nil {
+				m.statusMessage = "Edited, but could not save history: " + err.Error()
+			}
+		}
+		wasBottom := m.step == 1 && !m.selecting() && msg.chatJID == m.activeChat && m.chatScroll >= m.maxChatScroll()
+		m.applyEdit(msg.chatJID, msg.targetID, msg.text, false)
+		if msg.chatJID == m.activeChat {
+			m.editing = nil
+			m.messageLines, m.currentLine = []string{""}, 0
+		}
+		m.keepChatBottom(wasBottom)
+		m.refreshConversations()
+		if !strings.HasPrefix(m.statusMessage, "Edited, but") {
+			m.statusMessage = "✅ Message edited"
+		}
+
+	case revokeResult:
+		m.isSending = false
+		if msg.err != nil {
+			m.statusMessage = "❌ Could not delete message: " + msg.err.Error()
+			return m, nil
+		}
+		if m.store != nil {
+			if _, err := m.store.MarkDeleted(msg.targetID); err != nil {
+				m.statusMessage = "Deleted, but could not save history: " + err.Error()
+			}
+		}
+		wasBottom := m.step == 1 && !m.selecting() && msg.chatJID == m.activeChat && m.chatScroll >= m.maxChatScroll()
+		m.applyEdit(msg.chatJID, msg.targetID, "", true)
+		if m.editing != nil && m.editing.WaID == msg.targetID {
+			m.cancelComposer()
+		}
+		if m.replyTo != nil && m.replyTo.WaID == msg.targetID {
+			m.replyTo = nil
+		}
+		m.keepChatBottom(wasBottom)
+		m.refreshConversations()
+		if !strings.HasPrefix(m.statusMessage, "Deleted, but") {
+			m.statusMessage = "✅ Message deleted for everyone"
 		}
 
 	case reactionResult:
@@ -677,7 +759,7 @@ func (m *Model) update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 				return m, nil
 			}
 		}
-		wasBottom := m.step == 1 && !m.reacting && msg.chatJID == m.activeChat && m.chatScroll >= m.maxChatScroll()
+		wasBottom := m.step == 1 && !m.selecting() && msg.chatJID == m.activeChat && m.chatScroll >= m.maxChatScroll()
 		m.applyReaction(msg.chatJID, msg.targetID, msg.sender, msg.emoji)
 		m.keepChatBottom(wasBottom)
 		if msg.emoji == "" {
@@ -821,7 +903,7 @@ func (m *Model) update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 					break
 				}
 			}
-			if !m.reacting {
+			if !m.selecting() {
 				m.chatScroll = m.maxChatScroll()
 			}
 		}
