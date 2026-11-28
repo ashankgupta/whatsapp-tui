@@ -78,6 +78,11 @@ CREATE TABLE IF NOT EXISTS reactions (
 	PRIMARY KEY (target_wa_id, sender_jid)
 );
 CREATE INDEX IF NOT EXISTS idx_reactions_chat ON reactions(chat_jid);
+CREATE TABLE IF NOT EXISTS chat_names (
+	chat_jid TEXT PRIMARY KEY,
+	name     TEXT NOT NULL,
+	updated  INTEGER NOT NULL
+);
 `
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
@@ -115,6 +120,51 @@ CREATE INDEX IF NOT EXISTS idx_reactions_chat ON reactions(chat_jid);
 }
 
 const legacyUnsupported = "[unsupported message]"
+
+// SaveChatNames remembers group and channel titles, so they can be used
+// without asking WhatsApp (shell completion, the send command).
+func (s *Store) SaveChatNames(names map[string]string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	now := time.Now().Unix()
+	for chat, name := range names {
+		if chat == "" || name == "" {
+			continue
+		}
+		if _, err := tx.Exec(
+			`INSERT INTO chat_names (chat_jid, name, updated) VALUES (?, ?, ?)
+			 ON CONFLICT(chat_jid) DO UPDATE SET name = excluded.name, updated = excluded.updated`,
+			chat, name, now,
+		); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// ChatNames returns the remembered group and channel titles.
+func (s *Store) ChatNames() (map[string]string, error) {
+	rows, err := s.db.Query(`SELECT chat_jid, name FROM chat_names`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	names := map[string]string{}
+	for rows.Next() {
+		var chat, name string
+		if err := rows.Scan(&chat, &name); err != nil {
+			return nil, err
+		}
+		names[chat] = name
+	}
+	return names, rows.Err()
+}
 
 // DeletedText replaces the text of a message its sender deleted.
 const DeletedText = "🚫 This message was deleted"

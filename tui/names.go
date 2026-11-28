@@ -113,6 +113,7 @@ func (m *Model) handleNameMsg(msg bubbletea.Msg) bubbletea.Cmd {
 		cmds := []bubbletea.Cmd{m.waitForNames()}
 		if msg.Chat != "" && msg.Name != "" {
 			m.groupNames[msg.Chat] = msg.Name
+			cmds = append(cmds, m.saveChatNamesCmd(map[string]string{msg.Chat: msg.Name}))
 		}
 		if msg.RefetchGroups {
 			cmds = append(cmds, m.fetchGroupNamesCmd())
@@ -133,6 +134,24 @@ func (m *Model) handleNameMsg(msg bubbletea.Msg) bubbletea.Cmd {
 		for k, v := range msg {
 			m.groupNames[k] = v
 		}
+		return m.saveChatNamesCmd(msg)
 	}
 	return nil
+}
+
+// saveChatNamesCmd remembers group and channel titles in history, for the
+// send command and shell completion.
+func (m Model) saveChatNamesCmd(names map[string]string) bubbletea.Cmd {
+	if m.store == nil || len(names) == 0 {
+		return nil
+	}
+	store := m.store
+	copied := make(map[string]string, len(names))
+	for k, v := range names {
+		copied[k] = v
+	}
+	return func() bubbletea.Msg {
+		_ = store.SaveChatNames(copied)
+		return nil
+	}
 }

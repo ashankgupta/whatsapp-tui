@@ -553,24 +553,7 @@ func (m *Model) update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 
 		wasBottom := m.step == 1 && !m.selecting() && chatJID == m.activeChat && m.chatScroll >= m.maxChatScroll()
 
-		record := history.Message{
-			ChatJID:   chatJID,
-			SenderJID: msg.Sender,
-			FromMe:    msg.FromMe,
-			Text:      msg.Text,
-			Timestamp: msg.Time,
-			WaID:      msg.ID,
-			MediaType: msg.MediaType,
-			MediaName: msg.MediaName,
-			MediaRaw:  encodeMediaRaw(msg.Raw),
-
-			ReplyID:     msg.ReplyID,
-			ReplyText:   msg.ReplyText,
-			ReplySender: msg.ReplySender,
-		}
-		if record.Timestamp.IsZero() {
-			record.Timestamp = time.Now()
-		}
+		record := incomingRecord(whatsapp.IncomingMessage(msg))
 
 		inserted := true
 		if m.store != nil {
@@ -604,6 +587,10 @@ func (m *Model) update(msg bubbletea.Msg) (bubbletea.Model, bubbletea.Cmd) {
 			cmd = bubbletea.Batch(cmd, m.downloadImageCmd(record, msg.Raw))
 		}
 		return m, cmd
+
+	case externalSentMsg:
+		m.handleExternalSent(msg)
+		return m, nil
 
 	case voiceTickMsg:
 		return m, m.handleVoiceTick()
