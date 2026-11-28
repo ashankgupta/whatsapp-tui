@@ -325,3 +325,75 @@ func Connect(dbPath string) *whatsmeow.Client {
 
 	return client
 }
+
+// ErrNotLoggedIn means there is no saved session to connect with.
+var ErrNotLoggedIn = fmt.Errorf("not logged in: run whatsapp-tui once and scan the QR code first")
+
+// ConnectExisting connects with the saved session and waits until WhatsApp
+// accepts it. Unlike Connect it never shows a QR code, so it suits scripts.
+func ConnectExisting(dbPath string, timeout time.Duration) (*whatsmeow.Client, error) {
+	ctx := context.Background()
+	container, err := sqlstore.New(ctx, "sqlite", dbPath, waLogger("DB"))
+	if err != nil {
+		return nil, fmt.Errorf("could not open session: %w", err)
+	}
+	device, err := container.GetFirstDevice(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not read session: %w", err)
+	}
+	if device.ID == nil {
+		return nil, ErrNotLoggedIn
+	}
+
+	client := whatsmeow.NewClient(device, waLogger("Client"))
+	ready := make(chan error, 1)
+	handler := client.AddEventHandler(func(evt any) {
+		var result error
+		switch evt := evt.(type) {
+		case *events.Connected:
+		case *events.LoggedOut:
+			result = fmt.Errorf("this device was logged out of WhatsApp: run whatsapp-tui and scan the QR code again")
+		case *events.ConnectFailure:
+			result = fmt.Errorf("WhatsApp refused the connection: %s", evt.Reason)
+		case *events.StreamReplaced:
+			result = fmt.Errorf("the session is in use by another whatsapp-tui")
+		default:
+			return
+		}
+		select {
+		case ready <- result:
+		default:
+		}
+	})
+	defer client.RemoveEventHandler(handler)
+
+	if err := client.Connect(); err != nil {
+		return nil, fmt.Errorf("could not connect: %w", err)
+	}
+	select {
+	case err := <-ready:
+		if err != nil {
+			client.Disconnect()
+			return nil, err
+		}
+		return client, nil
+	case <-time.After(timeout):
+		client.Disconnect()
+		return nil, fmt.Errorf("timed out connecting to WhatsApp; check your internet connection")
+	}
+}
+
+// OpenOffline loads the saved session without connecting, to read local
+// data such as contact names. It returns nil when there is no session.
+func OpenOffline(dbPath string) *whatsmeow.Client {
+	ctx := context.Background()
+	container, err := sqlstore.New(ctx, "sqlite", dbPath, waLog.Noop)
+	if err != nil {
+		return nil
+	}
+	device, err := container.GetFirstDevice(ctx)
+	if err != nil || device.ID == nil {
+		return nil
+	}
+	return whatsmeow.NewClient(device, waLog.Noop)
+}

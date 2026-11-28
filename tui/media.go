@@ -889,115 +889,130 @@ type fileSendResult struct {
 
 // sendFileCmd uploads a local file as an image or document.
 func (m Model) sendFileCmd(path string) bubbletea.Cmd {
+	client, chat := m.client, m.activeChat
 	return func() bubbletea.Msg {
-		result := fileSendResult{chatJID: m.activeChat}
-
-		if m.client == nil || m.activeChat == "" {
-			result.err = fmt.Errorf("no chat selected")
-			return result
-		}
-
-		att, err := inspectAttachment(path)
-		if err != nil {
-			result.err = err
-			return result
-		}
-
-		recipient, err := m.recipientJID()
-		if err != nil {
-			result.err = err
-			return result
-		}
-
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
+		return sendFile(ctx, client, chat, path, "")
+	}
+}
 
-		var (
-			outgoing  *waE2E.Message
-			mediaType = att.Kind
-		)
+// sendFile uploads a local file to a chat as an image or document, with an
+// optional caption, and caches a copy in media/.
+func sendFile(ctx context.Context, client *whatsmeow.Client, chat, path, caption string) fileSendResult {
+	result := fileSendResult{chatJID: chat}
 
-		switch att.Kind {
-		case "image":
-			resp, err := m.client.Upload(ctx, att.Data, whatsmeow.MediaImage)
-			if err != nil {
-				result.err = err
-				return result
-			}
-			bounds := att.Image.Bounds()
-			imageMsg := &waE2E.ImageMessage{
-				URL:           proto.String(resp.URL),
-				DirectPath:    proto.String(resp.DirectPath),
-				MediaKey:      resp.MediaKey,
-				FileEncSHA256: resp.FileEncSHA256,
-				FileSHA256:    resp.FileSHA256,
-				FileLength:    proto.Uint64(resp.FileLength),
-				Mimetype:      proto.String(att.MIME),
-				Width:         proto.Uint32(uint32(bounds.Dx())),
-				Height:        proto.Uint32(uint32(bounds.Dy())),
-				JPEGThumbnail: makeJPEGThumbnail(att.Image, 32),
-			}
-			outgoing = &waE2E.Message{ImageMessage: imageMsg}
-		default:
-			mediaType = "document"
-			f, err := os.Open(att.Path)
-			if err != nil {
-				result.err = err
-				return result
-			}
-			resp, err := m.client.UploadReader(ctx, f, nil, whatsmeow.MediaDocument)
-			f.Close()
-			if err != nil {
-				result.err = err
-				return result
-			}
-			documentMsg := &waE2E.DocumentMessage{
-				URL:           proto.String(resp.URL),
-				DirectPath:    proto.String(resp.DirectPath),
-				MediaKey:      resp.MediaKey,
-				FileEncSHA256: resp.FileEncSHA256,
-				FileSHA256:    resp.FileSHA256,
-				FileLength:    proto.Uint64(resp.FileLength),
-				Mimetype:      proto.String(att.MIME),
-				FileName:      proto.String(att.Name),
-				Title:         proto.String(att.Name),
-			}
-			outgoing = &waE2E.Message{DocumentMessage: documentMsg}
-		}
+	if client == nil || chat == "" {
+		result.err = fmt.Errorf("no chat selected")
+		return result
+	}
 
-		resp, err := m.client.SendMessage(ctx, recipient, outgoing)
+	att, err := inspectAttachment(path)
+	if err != nil {
+		result.err = err
+		return result
+	}
+
+	recipient, err := chatRecipient(chat)
+	if err != nil {
+		result.err = err
+		return result
+	}
+
+	var (
+		outgoing  *waE2E.Message
+		mediaType = att.Kind
+	)
+
+	switch att.Kind {
+	case "image":
+		resp, err := client.Upload(ctx, att.Data, whatsmeow.MediaImage)
 		if err != nil {
 			result.err = err
 			return result
 		}
-
-		id := string(resp.ID)
-		if id == "" {
-			id = fmt.Sprintf("out-%d", time.Now().UnixNano())
+		bounds := att.Image.Bounds()
+		imageMsg := &waE2E.ImageMessage{
+			URL:           proto.String(resp.URL),
+			DirectPath:    proto.String(resp.DirectPath),
+			MediaKey:      resp.MediaKey,
+			FileEncSHA256: resp.FileEncSHA256,
+			FileSHA256:    resp.FileSHA256,
+			FileLength:    proto.Uint64(resp.FileLength),
+			Mimetype:      proto.String(att.MIME),
+			Width:         proto.Uint32(uint32(bounds.Dx())),
+			Height:        proto.Uint32(uint32(bounds.Dy())),
+			JPEGThumbnail: makeJPEGThumbnail(att.Image, 32),
 		}
-
-		var cachePath string
-		if mediaType == "image" {
-			cachePath, err = cacheMediaBytes(id, att.Name, att.MIME, att.Data)
-		} else {
-			cachePath, err = cacheMediaFile(id, att.Name, att.MIME, att.Path)
+		if caption != "" {
+			imageMsg.Caption = proto.String(caption)
 		}
+		outgoing = &waE2E.Message{ImageMessage: imageMsg}
+	default:
+		mediaType = "document"
+		f, err := os.Open(att.Path)
 		if err != nil {
-			result.warn = "sent, but could not cache file: " + err.Error()
-			cachePath = att.Path
+			result.err = err
+			return result
 		}
-
-		text := "📷 Photo"
-		if mediaType == "document" {
-			text = "📄 " + att.Name
+		resp, err := client.UploadReader(ctx, f, nil, whatsmeow.MediaDocument)
+		f.Close()
+		if err != nil {
+			result.err = err
+			return result
 		}
+		documentMsg := &waE2E.DocumentMessage{
+			URL:           proto.String(resp.URL),
+			DirectPath:    proto.String(resp.DirectPath),
+			MediaKey:      resp.MediaKey,
+			FileEncSHA256: resp.FileEncSHA256,
+			FileSHA256:    resp.FileSHA256,
+			FileLength:    proto.Uint64(resp.FileLength),
+			Mimetype:      proto.String(att.MIME),
+			FileName:      proto.String(att.Name),
+			Title:         proto.String(att.Name),
+		}
+		if caption != "" {
+			documentMsg.Caption = proto.String(caption)
+		}
+		outgoing = &waE2E.Message{DocumentMessage: documentMsg}
+	}
 
-		result.text = text
-		result.msgID = id
-		result.time = resp.Timestamp
-		result.mediaType = mediaType
-		result.mediaPath = cachePath
-		result.mediaName = att.Name
+	resp, err := client.SendMessage(ctx, recipient, outgoing)
+	if err != nil {
+		result.err = err
 		return result
 	}
+
+	id := string(resp.ID)
+	if id == "" {
+		id = fmt.Sprintf("out-%d", time.Now().UnixNano())
+	}
+
+	var cachePath string
+	if mediaType == "image" {
+		cachePath, err = cacheMediaBytes(id, att.Name, att.MIME, att.Data)
+	} else {
+		cachePath, err = cacheMediaFile(id, att.Name, att.MIME, att.Path)
+	}
+	if err != nil {
+		result.warn = "sent, but could not cache file: " + err.Error()
+		cachePath = att.Path
+	}
+
+	text := "📷 Photo"
+	if mediaType == "document" {
+		text = "📄 " + att.Name
+	}
+	if caption != "" {
+		text = caption
+	}
+
+	result.text = text
+	result.msgID = id
+	result.time = resp.Timestamp
+	result.mediaType = mediaType
+	result.mediaPath = cachePath
+	result.mediaName = att.Name
+	return result
 }

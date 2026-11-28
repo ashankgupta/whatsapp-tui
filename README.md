@@ -12,6 +12,7 @@ A terminal-based WhatsApp messenger built in Go using [whatsmeow](https://github
 
 ## Features
 
+- Send messages and files from the shell or your scripts: `whatsapp-tui send me "Build finished"`
 - Real chat names from WhatsApp: names saved on your phone, group and channel titles and profile names
 - Add, rename and delete contacts from inside the app; `contacts.json` is created automatically
 - WhatsApp-style chat view with sent/received messages
@@ -166,6 +167,45 @@ Incoming WhatsApp calls appear as a banner. You can reject them with `Ctrl+D` or
 | Chat | type to compose, `Enter` send, `Ctrl+N` new line, `Ctrl+F` attach a local file (type/paste path, `Enter` send, `Esc` cancel, `Ctrl+U` clear), `Ctrl+T` record a voice message (`Enter` send, `Esc` discard), `Ctrl+P` play a voice message or video (`↑/↓` pick, `Enter` play, `Ctrl+P` again stops), `Ctrl+S` save latest media (selected media while reacting), `↑/↓` scroll, `Ctrl+R` react (`↑/↓` pick message, `1`–`6` choose emoji, same emoji again removes, `Esc` cancel), `Ctrl+A` message actions (`↑/↓` pick message, `r` reply, `e` edit your own, `d` delete your own then `y` to confirm, `Esc` cancel; `Esc` also cancels a pending reply or edit), `Ctrl+E` save/rename contact, `Ctrl+O` open in WhatsApp, `Esc` back, `Ctrl+C` quit |
 | Recent chats | `/` search by name or number (finds archived chats too; `Esc` closes), `↑/↓` navigate, `Enter` open, `s` save contact, `a` archive/unarchive, `v` show archived chats, `Tab` back, `Ctrl+O` open in WhatsApp, `q` quit |
 | Call alert | `Ctrl+D` reject, `Esc` hide |
+
+## Send from the command line
+
+Send messages and files without opening the app, from scripts, cron jobs or CI:
+
+```bash
+whatsapp-tui send me "Build finished"                # message yourself, e.g. as a phone notification
+whatsapp-tui send Rahul "Running 10 minutes late"    # a contact, group or channel by name
+whatsapp-tui send "+91 98765 43210" "Hi"             # a phone number with country code
+whatsapp-tui send Family --file photo.jpg "From the trip"   # a file, with an optional caption
+make test 2>&1 | tail -20 | whatsapp-tui send me     # the message from standard input
+```
+
+- **Who to send to:** `me`, a name from `contacts.json` or your phone's address book, a group or channel title, a phone number, or a WhatsApp ID. Part of a name works when it matches only one chat. Otherwise the command lists the matches so you can be more specific.
+- **Files:** photos are sent as images, and anything else as a document.
+- **If the app is open,** the command sends through it and the message appears in the chat straight away. WhatsApp allows one connection per linked device, so this is how both can be used together.
+- **Otherwise** it connects with your saved session, sends, saves any messages that arrived meanwhile to your history, and disconnects. This takes a few seconds. Log in with the app once first.
+- **Folder:** it uses the `session.db` in the current folder, or the one next to the program. To use another folder, add `--dir`, e.g. `whatsapp-tui --dir ~/whatsapp send me "hi"`.
+- **Exit codes:** `0` sent, `1` failed (the reason is printed), `2` wrong usage. Run `whatsapp-tui send --help` for the full help.
+
+### Tab completion for contacts
+
+Type `whatsapp-tui send As` and press `Tab` to pick from your contacts and groups. Capitals don't matter, and a word in the middle of a name works too (`gupta` finds "Ashank Gupta").
+
+**Turning it on:**
+- **Linux packages** (`.deb`, `.rpm`, Arch): it works out of the box for bash, zsh and fish.
+- **Everyone else:** run this once, then open a new terminal:
+
+  ```bash
+  whatsapp-tui completion install
+  ```
+
+  It finds your shell (zsh, bash, fish or PowerShell) and adds a short, clearly marked block to its settings file. Run it again any time; it won't add a second copy. `whatsapp-tui completion uninstall` removes it again.
+
+On Windows, PowerShell blocks profile scripts by default. If it does, `completion install` tells you the one command that allows them for your account.
+
+**Where suggestions come from:** your saved contacts, your phone's address book and your groups. They show up instantly, without going online. Group names are remembered each time the app runs, so open the app once after updating. When several people share a name, each is offered with their number, e.g. `Rahul (+91 98765 43210)`.
+
+`whatsapp-tui send` finds your data in the folder you run it from, or next to the program itself, so it works from anywhere. To use another folder, add `--dir`.
 
 ## Disclaimer
 

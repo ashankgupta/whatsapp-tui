@@ -327,10 +327,15 @@ type sendMessageResult struct {
 
 // recipientJID builds the destination JID for the active chat.
 func (m Model) recipientJID() (waTypes.JID, error) {
-	if strings.Contains(m.activeChat, "@") {
-		return waTypes.ParseJID(m.activeChat)
+	return chatRecipient(m.activeChat)
+}
+
+// chatRecipient turns a chat key (phone number or full JID) into a JID.
+func chatRecipient(chat string) (waTypes.JID, error) {
+	if strings.Contains(chat, "@") {
+		return waTypes.ParseJID(chat)
 	}
-	return waTypes.NewJID(m.activeChat, waTypes.DefaultUserServer), nil
+	return waTypes.NewJID(chat, waTypes.DefaultUserServer), nil
 }
 
 func (m Model) sendMessageCmd() bubbletea.Cmd {

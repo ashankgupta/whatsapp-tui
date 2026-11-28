@@ -10,3 +10,5 @@ media/
 whatsapp.log
 downloads/
 dist/
+whatsapp-tui.sock
+completions/
