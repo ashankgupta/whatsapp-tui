@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -49,9 +50,12 @@ func TestUpdateBlock(t *testing.T) {
 		t.Fatalf("uninstall left %q, want %q", got, original)
 	}
 
-	// The file keeps its permissions.
-	if info, _ := os.Stat(rc); info.Mode().Perm() != 0o600 {
-		t.Fatalf("mode changed to %v", info.Mode().Perm())
+	// The file keeps its permissions. Windows has no Unix permission bits:
+	// Go reports every writable file as 0666 there, so skip the check.
+	if runtime.GOOS != "windows" {
+		if info, _ := os.Stat(rc); info.Mode().Perm() != 0o600 {
+			t.Fatalf("mode changed to %v", info.Mode().Perm())
+		}
 	}
 
 	// A missing file is created; uninstalling with no block changes nothing.
